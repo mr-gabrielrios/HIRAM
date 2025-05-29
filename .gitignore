@@ -1,6 +1,6 @@
-!*
+/*
 
-README.md
-.gitignore
-src
-src/*.F*
+!/.gitignore
+!/README.md
+!/src/
+!/exp/TEST_CTL1990/
