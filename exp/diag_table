@@ -1,0 +1,84 @@
+c96L33_am4p0
+1 1 1 0 0 0
+
+"grid_spec",            -1, "months",  1, "days", "time",
+"atmos_4xdaily",         6,  "hours",  1, "days", "time",
+"atmos_daily",          24,  "hours",  1, "days", "time",
+"atmos_month",           1, "months",  1, "days", "time",
+
+"dynamics",        "vort850",            "vort850",            "atmos_4xdaily",   "all", .false.,  "none", 2
+"dynamics",        "tm",                 "tm",                 "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "u_ref",              "u_ref",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "v_ref",              "v_ref",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"dynamics",        "slp",                "slp",                "atmos_4xdaily",   "all", .false.,  "none", 2
+"moist",           "precip",             "precip",             "atmos_4xdaily",   "all", .false.,  "none", 2
+"moist",           "WVP",                "WVP",                "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "evap",               "evap",               "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "shflx",              "shflx",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "olr",                "olr",                "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "netrad_toa",         "netrad_toa",         "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "lwdn_sfc",           "lwdn_sfc",           "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "lwup_sfc",           "lwup_sfc",           "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "swdn_sfc",           "swdn_sfc",           "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "swup_sfc",           "swup_sfc",           "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "swdn_toa",           "swdn_toa",           "atmos_4xdaily",   "all", .false.,  "none", 2
+"radiation",       "swup_toa",           "swup_toa",           "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "swfq",               "swfq",               "atmos_4xdaily",   "all", .false.,  "none", 2
+"dynamics",        "rh200",              "rh200",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"dynamics",        "rh500",              "rh500",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"dynamics",        "rh700",              "rh700",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"dynamics",        "rh850",              "rh850",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "tau_x",              "tau_x",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "tau_y",              "tau_y",              "atmos_4xdaily",   "all", .false.,  "none", 2
+"flux",            "t_surf",             "t_surf",             "atmos_4xdaily",   "all", .false.,  "none", 2
+
+"dynamics",        "ucomp",              "ucomp",              "atmos_daily",     "all", .false.,  "none", 2
+"dynamics",        "vcomp",              "vcomp",              "atmos_daily",     "all", .false.,  "none", 2
+"dynamics",        "omega",              "omega",              "atmos_daily",     "all", .false.,  "none", 2
+"dynamics",        "sphum",              "sphum",              "atmos_daily",     "all", .false.,  "none", 2
+"dynamics",        "temp",               "temp",               "atmos_daily",     "all", .false.,  "none", 2
+"dynamics",        "cld_amt",            "cld_amt",            "atmos_daily",     "all", .false.,  "none", 2
+
+"flux",            "land_mask",          "land_mask",          "atmos_month",     "all", .true.,   "none", 2
+"moist",           "precip",             "precip",             "atmos_month",     "all", .true.,   "none", 2
+"moist",           "WVP",                "WVP",                "atmos_month",     "all", .true.,   "none", 2
+"flux",            "evap",               "evap",               "atmos_month",     "all", .true.,   "none", 2
+"flux",            "shflx",              "shflx",              "atmos_month",     "all", .true.,   "none", 2
+"flux",            "t_surf",             "t_surf",             "atmos_month",     "all", .true.,   "none", 2
+"ras",             "mc",                 "mc",                 "atmos_month",     "all", .true.,   "none", 2
+"dynamics",        "ps",                 "ps",                 "atmos_month",     "all", .true.,   "none", 2
+"dynamics",        "omega",              "omega",              "atmos_month",     "all", .true.,   "none", 2
+"flux",            "tau_x",              "tau_x",              "atmos_month",     "all", .true.,   "none", 2
+"flux",            "tau_y",              "tau_y",              "atmos_month",     "all", .true.,   "none", 2
+"moist",           "rh",                 "rh",                 "atmos_month",     "all", .true.,   "none", 2
+"dynamics",        "ucomp",              "ucomp",              "atmos_month",     "all", .true.,   "none", 2
+"dynamics",        "vcomp",              "vcomp",              "atmos_month",     "all", .true.,   "none", 2
+"flux",            "wind",               "wind",               "atmos_month",     "all", .true.,   "none", 2
+"dynamics",        "cld_amt",            "cld_amt",            "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "lwdn_sfc_clr",       "lwdn_sfc_clr",       "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "lwup_sfc_clr",       "lwup_sfc_clr",       "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "netrad_toa_clr",     "netrad_toa_clr",     "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "olr_clr",            "olr_clr",            "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swdn_sfc_clr",       "swdn_sfc_clr",       "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swup_sfc_clr",       "swup_sfc_clr",       "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swdn_toa_clr",       "swdn_toa_clr",       "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swup_toa_clr",       "swup_toa_clr",       "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "olr",                "olr",                "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "lwdn_sfc",           "lwdn_sfc",           "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "lwup_sfc",           "lwup_sfc",           "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "netrad_toa",         "netrad_toa",         "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swdn_sfc",           "swdn_sfc",           "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swup_sfc",           "swup_sfc",           "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swdn_toa",           "swdn_toa",           "atmos_month",     "all", .true.,   "none", 2
+"radiation",       "swup_toa",           "swup_toa",           "atmos_month",     "all", .true.,   "none", 2
+"moist",           "qdt_conv",           "qdt_conv",           "atmos_month",   "all",   .true.,   "none", 2
+"moist",           "tdt_conv",           "tdt_conv",           "atmos_month",   "all",   .true.,   "none", 2
+"moist",           "qdt_ls",             "qdt_ls",             "atmos_month",   "all",   .true.,   "none", 2
+"moist",           "tdt_ls",             "tdt_ls",             "atmos_month",   "all",   .true.,   "none", 2
+"moist",           "prec_conv",          "prec_conv",          "atmos_month",   "all",   .true.,   "none", 2
+"moist",           "prec_ls",            "prec_ls",            "atmos_month",   "all",   .true.,   "none", 2
+"radiation",       "tdt_lw_clr",         "tdt_lw_clr",         "atmos_month",   "all",   .true.,   "none", 2
+"radiation",       "tdt_sw_clr",         "tdt_sw_clr",         "atmos_month",   "all",   .true.,   "none", 2
+"radiation",       "tdt_lw",             "tdt_lw",             "atmos_month",   "all",   .true.,   "none", 2
+"radiation",       "tdt_sw",             "tdt_sw",             "atmos_month",   "all",   .true.,   "none", 2
+"radiation",       "rrvco2",             "rrvco2",             "atmos_month",   "all",   .true.,   "none", 2

@@ -3,4 +3,7 @@
 !/.gitignore
 !/README.md
 !/src/
+!/exp/
+/exp/exec*
 !/exp/TEST_CTL1990/
+*.out*
