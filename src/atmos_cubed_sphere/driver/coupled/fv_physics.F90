@@ -233,7 +233,7 @@ contains
                              flux_sw_vis, flux_sw_vis_dir,   &
                              flux_sw_vis_dif,                &
                              flux_lw, coszen,                &
-                             gust, Surf_diff )
+                             gust, Surf_diff, frac_open_sea )
 !-----------------------------------------------------------------------
 !
 !   Time_prev =  time at the previous time level, tau-1 (time_type)
@@ -251,7 +251,8 @@ contains
                                        albedo_vis_dir, albedo_nir_dir, &
                                        albedo_vis_dif, albedo_nir_dif, &
                                        rough_vel, t_surf, u_star,      &
-                                       b_star, q_star, dtau_du, dtau_dv
+                                       b_star, q_star, dtau_du, dtau_dv, &
+                                       frac_open_sea
 
     type(surf_diff_type), intent(inout) :: Surf_diff
     real, intent(inout), dimension(isc:iec,jsc:jec):: tau_x, tau_y
@@ -358,6 +359,7 @@ contains
                       q_phys(isw:iew,jsw:jew,:,1)                          , &
                       q_phys(isw:iew,jsw:jew,:,:)                          , &
                    frac_land(isw:iew,jsw:jew), rough_vel(isw:iew,jsw:jew)  , &
+                   frac_open_sea(isw:iew,jsw:jew),                           &
                    albedo   (isw:iew,jsw:jew)                              , &
                    albedo_vis_dir(isw:iew,jsw:jew)                         , &
                    albedo_nir_dir(isw:iew,jsw:jew)                         , &
@@ -430,6 +432,7 @@ contains
                    Atm(1)%q (isw:iew,jsw:jew,:,1)                          , &
                    Atm(1)%q (isw:iew,jsw:jew,:,:)                          , &
                    frac_land(isw:iew,jsw:jew), rough_vel(isw:iew,jsw:jew)  , &
+                   frac_open_sea(isw:iew,jsw:jew),                           &
                    albedo   (isw:iew,jsw:jew)                              , &
                    albedo_vis_dir(isw:iew,jsw:jew)                         , &
                    albedo_nir_dir(isw:iew,jsw:jew)                         , &

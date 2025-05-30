@@ -271,6 +271,7 @@ contains
                            rough_mom,                      &
                            u_star,  b_star, q_star,        &
                            dtau_du, dtau_dv, tau_x, tau_y, &
+                           frac_open_sea,                  &
                            gust, coszen, flux_sw,          &
                            flux_sw_dir, flux_sw_dif,       &
                            flux_sw_down_vis_dir,           &          
@@ -290,7 +291,8 @@ contains
                                       albedo_vis_dir, albedo_nir_dir, &
                                       albedo_vis_dif, albedo_nir_dif, &
                                       rough_mom, u_star, b_star,      &
-                                      q_star, dtau_du, dtau_dv
+                                      q_star, dtau_du, dtau_dv,       &
+                                      frac_open_sea
    real, intent(inout), dimension(:,:):: tau_x,  tau_y
    real, intent(out),   dimension(:,:):: gust, coszen, flux_sw,    &
                                          flux_sw_dir, flux_sw_dif, &
@@ -380,7 +382,7 @@ contains
                          flux_sw_down_total_dif,         &
                          flux_sw_vis, flux_sw_vis_dir,   &
                          flux_sw_vis_dif, flux_lw,       &
-                         coszen, gust, Surf_diff )
+                         coszen, gust, Surf_diff, frac_open_sea )
                          call timing_off('fv_physics_down')
    call mpp_clock_end (id_phys_down)
    call nullify_domain ( )

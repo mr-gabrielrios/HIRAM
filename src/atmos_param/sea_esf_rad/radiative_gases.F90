@@ -2045,6 +2045,8 @@ character(len=8)     :: gas_name ! name associated with current
 !    if specification_type is 'base_and_trend', allocate length (1)
 !    arrays to hold the base_time and base_value.
 !---------------------------------------------------------------------
+      write(*, *) 'CH4 data source: ', trim(data_source)
+
       if (trim(ch4_specification_type) /= 'time_series') then
         allocate (Ch4_time_list(1))
         allocate (ch4_value(1))

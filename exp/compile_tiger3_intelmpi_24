@@ -1,6 +1,7 @@
 #!/bin/csh -f
 unalias *
 set echo
+setenv I_MPI_F90 ifort
 
 # Variables that need to be changed between compilers
 set platform  = tiger3_intelmpi_24 # A unique identifier for your platform.

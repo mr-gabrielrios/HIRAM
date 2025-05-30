@@ -118,7 +118,7 @@
            months = 0,
            days   = 1,
            dt_atmos = 1200, 
-           dt_cpld  = 43200,
+           dt_ocean = 43200,
            current_date = 0101,1,1,0,0,0,
            calendar = 'noleap'
 /
@@ -131,7 +131,7 @@
  &damping_driver_nml
            trayfric = 0.,
            nlev_rayfric = 1,
-           do_mg_drag = .true.,
+           do_mg_drag = .false.,
            do_cg_drag = .false.,
            do_topo_drag = .false.,
            do_conserve_energy = .true.
@@ -219,8 +219,8 @@
 /
 
  &fv_core_nml
-           layout   = 5, 3,
-           io_layout = 5, 3,
+           layout   = 4, 4,
+           io_layout = 2, 2,
            npx      = 181,
            npy      = 181, 
            ntiles   = 6,
@@ -239,7 +239,7 @@
            consv_te = 0.7,
            fill = .true.
            print_freq = 0,
-           grid_type = -1
+           grid_type = 0,
            warm_start = .false.
 /
 
@@ -280,45 +280,14 @@
            t_range = 10.
 /
 
- &ice_model_nml
-           interp_method = 'bilinear',
-           layout = 15, 6,
-           io_layout = 1, 3,
-           use_climo_ice = .false.
+&ice_model_nml
+       heat_capacity_ocean = 8.e07,
+       ice_method = 'none',
+       sst_method = 'mixed_layer'
 /
 
- &lake_data_nml
-         lake_to_use = 'from-rivers'
-         num_l = 20,
-         dz = 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.,
-              1., 1., 1., 1., 1., 1., 1., 1., 1., 1.,
-         dat_emis_dry = 1.,
-         dat_emis_sat = 1.,
-         dat_heat_capacity_ref = 0.,
-         f_iso_liq = 0.02, 0.01
-         f_iso_ice = 0.02, 0.01
-         f_vol_liq = 0.003, 0.
-         f_vol_ice = 0.003, 0.
-         f_geo_liq = 0., 0.
-         f_geo_ice = 0., 0.
-/
 
- &lake_nml
-         albedo_to_use = 'brdf-params'
-         float_ice_to_top = .true.
-/
-
- &land_debug_nml
-         watch_point = 0,0,0,1
-/
-
-!  &land_model_nml
-!            layout   = 5, 3,
-!            io_layout = 5, 3,
-!            tau_snow_T_adj = 604800.
-! /
-
- &lscale_cond_nml
+&lscale_cond_nml
        do_evap = .true.
 /
 
@@ -327,10 +296,10 @@
 /
 
  &mg_drag_nml
-       gmax  = 3.,
+       gmax  = 1.,
        acoef = 1.,
        do_conserve_energy = .true.,
-       source_of_sgsmtn = 'input/computed'
+       source_of_sgsmtn = 'computed'
 /
 
  &microphys_rad_nml
@@ -367,14 +336,15 @@
     AKmin_sea  = 0.
 /
 
- &ocean_albedo_nml
-           ocean_albedo_option = 5
+&ocean_albedo_nml
+  ocean_albedo_option = 4
+  const_alb = 0.08
 /
 
  &ocean_model_nml
            interp_method = 'bilinear',
-           layout = 15, 6,
-           use_climo_sst = .false.
+           layout = 0, 0,
+           use_climo_sst = .true.
 /
 
  &ocean_rough_nml
@@ -382,10 +352,9 @@
 /
 
  &ozone_nml
-       basic_ozone_type = 'fixed_year' ,
-       ozone_dataset_entry = 1990 1 1 0 0 0
-       data_name = "ozone",
-       filename = "o3.climatology.nc"
+       basic_ozone_type = 'clim_zonal' ,
+       data_name = "ozone_1990",
+       filename = "aqua_ozone.nc"
 /
 
  &rad_output_file_nml
@@ -398,10 +367,10 @@
        num_pts_ij = 0
 /
 
- &radiation_driver_nml
+  &radiation_driver_nml
        rad_time_step= 10800,
        time_varying_solar_constant = .false.,
-       solar_dataset_entry = 1990 1 1 0 0 0
+       solar_dataset_entry = 1 1 1 0 0 0
        rad_package = 'sea_esf',
        do_clear_sky_pass=.true.,
        calc_hemi_integrals = .false.,
@@ -413,51 +382,35 @@
 
  &radiative_gases_nml
        verbose = 3
-       gas_printout_freq = 240
+       gas_printout_freq = 2400
 
        time_varying_co2 = .false.,
-       co2_variation_type = 'linear',
-       co2_dataset_entry = 1990 1 1 0 0 0
-       co2_specification_type = 'time_series',
-       co2_floor = 100.0E-06,
-       co2_ceiling = 1600.0E-06,
-       co2_data_source = 'input'
+       co2_data_source = 'namelist'
+       co2_base_value = 300.0E-06
 
        time_varying_ch4 = .false.,
-       ch4_variation_type = 'linear'
-       ch4_dataset_entry = 1990 1 1 0 0 0
-       ch4_specification_type = 'time_series'
-       ch4_data_source = 'input'
+       ch4_data_source = 'namelist'
+       ch4_base_value = 0.0
 
        time_varying_n2o = .false.,
-       n2o_variation_type = 'linear'
-       n2o_dataset_entry = 1990 1 1 0 0 0
-       n2o_specification_type = 'time_series'
-       n2o_data_source = 'input'
+       n2o_data_source = 'namelist'
+       n2o_base_value = 0.0
 
        time_varying_f11 = .false.,
-       f11_variation_type = 'linear'
-       f11_dataset_entry = 1990 1 1 0 0 0
-       f11_specification_type = 'time_series'
-       f11_data_source = 'input'
+       f11_data_source = 'namelist'
+       f11_base_value = 0.0
 
        time_varying_f12 = .false.,
-       f12_variation_type = 'linear'
-       f12_dataset_entry = 1990 1 1 0 0 0
-       f12_specification_type = 'time_series'
-       f12_data_source = 'input'
+       f12_data_source = 'namelist'
+       f12_base_value = 0.0
 
        time_varying_f113 = .false.,
-       f113_variation_type = 'linear'
-       f113_dataset_entry = 1990 1 1 0 0 0
-       f113_specification_type = 'time_series'
-       f113_data_source = 'input'
+       f113_data_source = 'namelist'
+       f113_base_value = 0.0
 
-       time_varying_f22 = .false.,
-       f22_variation_type = 'linear'
-       f22_dataset_entry = 1990 1 1 0 0 0
-       f22_specification_type = 'time_series'
-       f22_data_source = 'input'
+      time_varying_f22 = .false.,
+      f22_data_source = 'namelist'
+      f22_base_value = 0.0
 /
 
  &ras_nml
@@ -507,9 +460,9 @@
        calc_co2_tfs_monthly = .true.,
        co2_tf_time_displacement = 360.0,
 
-       calc_ch4_tfs_on_first_step = .false.,
-       calc_ch4_tfs_monthly = .true.,
-       ch4_tf_time_displacement = 360.0,
+       calc_ch4_tfs_on_first_step = .true.,
+       calc_ch4_tfs_monthly = .false.,
+       ch4_tf_time_displacement = 0.0,
 
        calc_n2o_tfs_on_first_step = .false.,
        calc_n2o_tfs_monthly = .true.,
@@ -524,47 +477,33 @@
        swform = 'esfsw99'
 /
 
- &snow_data_nml
-         emis_snow_max = 1.
-         emis_snow_min = 1.
-         z0_momentum = 0.01
-         num_l = 5
-         dz = 0.05, 0.2, 0.5, 0.2, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0
-         f_iso_cold = 0.90, 0.60
-         f_vol_cold = 0.09, 0.13
-         f_geo_cold = 0.00, 0.00
-         f_iso_warm = 0.90, 0.60
-         f_vol_warm = 0.09, 0.13
-         f_geo_warm = 0.00, 0.00
-         depth_crit = 0.05
-/
-
- &snow_nml
-         min_snow_mass = 1.e-10
-         max_snow = 1000.
-         albedo_to_use = 'brdf-params'
-/
+!  &snow_data_nml
+!          emis_snow_max = 1.
+!          emis_snow_min = 1.
+!          z0_momentum = 0.01
+!          num_l = 5
+!          dz = 0.05, 0.2, 0.5, 0.2, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0
+!          f_iso_cold = 0.90, 0.60
+!          f_vol_cold = 0.09, 0.13
+!          f_geo_cold = 0.00, 0.00
+!          f_iso_warm = 0.90, 0.60
+!          f_vol_warm = 0.09, 0.13
+!          f_geo_warm = 0.00, 0.00
+!          depth_crit = 0.05
+! /
+! 
+!  &snow_nml
+!          min_snow_mass = 1.e-10
+!          max_snow = 1000.
+!          albedo_to_use = 'brdf-params'
+! /
 
  &soil_data_nml
-         dat_emis_dry     = 1., 1., 1., 1., 1., 1., 1., 1., 1.
-         dat_emis_sat     = 1., 1., 1., 1., 1., 1., 1., 1., 1.
-         dat_tf_depr      = 2., 2., 2., 2., 2., 2., 2., 2., 2.
-         use_geohydrology = .true.
-         gw_scale_soil_depth  = 10.
-         freeze_factor    = 2.0
-         comp             = 1e-4
-         num_l            = 20
-         dz = 0.020, 0.040, 0.040, 0.050, 0.05, 0.100, 0.10, 0.200, 0.200, 0.2,
-              0.40,  0.40,  0.40,  0.4,   0.4,   1.0,   1.0,  1.0,  1.5,   2.5
+    use_geohydrology = .true.
+    soil_to_use = 'constant',
+    soil_index_constant   = 2,
 /
 
- &soil_nml
-         init_w        = 500.
-         albedo_to_use = 'brdf-maps'
-         uptake_to_use = 'darcy2d-linearized'
-         uptake_oneway = .true.
-         active_layer_drainage_acceleration = 100.
-/
 
  &stable_bl_turb_nml
     alsm = 500.0,
@@ -608,13 +547,13 @@
        gust_min = 1.e-10
 /
 
- &topo_rough_nml
-         use_topo_rough    = .true.
-         max_topo_rough    = 100.0
-         topo_rough_factor = 0.01
-         topo_rough_source = 'input'
-         topo_rough_file = 'INPUT/mg_drag.res.nc'
-/
+!  &topo_rough_nml
+!          use_topo_rough    = .true.
+!          max_topo_rough    = 100.0
+!          topo_rough_factor = 0.01
+!          topo_rough_source = 'input'
+!          topo_rough_file = 'INPUT/mg_drag.res.nc'
+! /
 
  &topography_nml
            topog_file = 'INPUT/navy_topography.data.nc'
@@ -654,53 +593,53 @@
          do_emmax = .true.
          do_pnqv  = .true.
 /
-
- &vegn_data_nml
-       dat_snow_crit = 0.0167, 0.0167, 0.0333, 0.2, 0.2
-       vegn_to_use = 'uniform'
-       K1=10,
-       K2=0.1,
-       fsc_liv=0.9,
-       fsc_wood=0.45,
-       c1(4) = 0.3
-       c2(4) = 0.3
-       Vmax = 2.0E-5, 2.0E-5, 2.0E-5, 2.0E-5, 1.5E-5,
-       m_cond = 4., 9., 9., 7., 7.,
-       alpha_phot = 0.05, 0.06, 0.06, 0.06, 0.06,
-       gamma_resp = 0.03, 0.02, 0.02, 0.02, 0.02,
-       fact_crit_phen(0:4) = 0., 0., 0., 0., 0.
-       fact_crit_fire(0:4) = 0., 0., 0., 0., 0.
-       cnst_crit_phen(0:4) = 0.30, 0.40, 0.30, 0.30, 0.30
-       cnst_crit_fire(0:4) = 0.15, 0.40, 0.15, 0.15, 0.15
-       wet_leaf_dreg(0:4)  = .3, .3, .3, .3, .3
-       ksi =  0, 0, 0, 0, 0,
-       leaf_refl(0:4,1) = 0.11, 0.11, 0.10, 0.10, 0.10
-       leaf_refl(0:4,2) = 0.58, 0.58, 0.5, 0.5, 0.5,
-       dat_root_zeta(0:4) =   0.35212, 0.17039, 0.28909, 0.25813, 0.17039
-       critical_root_density = 0.0,
-       tau_drip_s     = 259200.0
-       cmc_lai(0:4) = 0.02, 0.02, 0.02, 0.02, 0.02
-       csc_lai(0:4) = 0.2, 0.2, 0.2, 0.2, 0.2
-       t_transp_min = 268.
-       srl(0:1) = 112.0e3, 150.0e3
-       root_perm = 14*5e-7
-       alpha(1,3) = 4 
-       leaf_age_tau(2) = 150
-       smoke_fraction = 0.9, 0.9, 0.6, 0.6, 0.6
-       tg_c3_thresh = 1
-       phen_ev2 = 0.925
-       cmc_eps = 0.01
-/
-
- &vegn_nml
-         init_Tv = 288.0
-         rad_to_use = 'two-stream'
-         photosynthesis_to_use = 'leuning'
-         snow_rad_to_use = 'paint-leaves'
-         write_soil_carbon_restart = .FALSE.
-         co2_to_use_for_photosynthesis ='prescribed'
-         co2_for_photosynthesis = 350.0e-6
-/
+! 
+!  &vegn_data_nml
+!        dat_snow_crit = 0.0167, 0.0167, 0.0333, 0.2, 0.2
+!        vegn_to_use = 'uniform'
+!        K1=10,
+!        K2=0.1,
+!        fsc_liv=0.9,
+!        fsc_wood=0.45,
+!        c1(4) = 0.3
+!        c2(4) = 0.3
+!        Vmax = 2.0E-5, 2.0E-5, 2.0E-5, 2.0E-5, 1.5E-5,
+!        m_cond = 4., 9., 9., 7., 7.,
+!        alpha_phot = 0.05, 0.06, 0.06, 0.06, 0.06,
+!        gamma_resp = 0.03, 0.02, 0.02, 0.02, 0.02,
+!        fact_crit_phen(0:4) = 0., 0., 0., 0., 0.
+!        fact_crit_fire(0:4) = 0., 0., 0., 0., 0.
+!        cnst_crit_phen(0:4) = 0.30, 0.40, 0.30, 0.30, 0.30
+!        cnst_crit_fire(0:4) = 0.15, 0.40, 0.15, 0.15, 0.15
+!        wet_leaf_dreg(0:4)  = .3, .3, .3, .3, .3
+!        ksi =  0, 0, 0, 0, 0,
+!        leaf_refl(0:4,1) = 0.11, 0.11, 0.10, 0.10, 0.10
+!        leaf_refl(0:4,2) = 0.58, 0.58, 0.5, 0.5, 0.5,
+!        dat_root_zeta(0:4) =   0.35212, 0.17039, 0.28909, 0.25813, 0.17039
+!        critical_root_density = 0.0,
+!        tau_drip_s     = 259200.0
+!        cmc_lai(0:4) = 0.02, 0.02, 0.02, 0.02, 0.02
+!        csc_lai(0:4) = 0.2, 0.2, 0.2, 0.2, 0.2
+!        t_transp_min = 268.
+!        srl(0:1) = 112.0e3, 150.0e3
+!        root_perm = 14*5e-7
+!        alpha(1,3) = 4 
+!        leaf_age_tau(2) = 150
+!        smoke_fraction = 0.9, 0.9, 0.6, 0.6, 0.6
+!        tg_c3_thresh = 1
+!        phen_ev2 = 0.925
+!        cmc_eps = 0.01
+! /
+! 
+!  &vegn_nml
+!          init_Tv = 288.0
+!          rad_to_use = 'two-stream'
+!          photosynthesis_to_use = 'leuning'
+!          snow_rad_to_use = 'paint-leaves'
+!          write_soil_carbon_restart = .FALSE.
+!          co2_to_use_for_photosynthesis ='prescribed'
+!          co2_for_photosynthesis = 350.0e-6
+! /
 
  &vert_diff_driver_nml
        do_conserve_energy = .true.

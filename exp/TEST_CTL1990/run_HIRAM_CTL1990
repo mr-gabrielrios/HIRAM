@@ -26,7 +26,7 @@ set Root = /scratch/gpfs/GEOCLIM/gr7610/tiger3/HIRAM-AQP
 set model_executable = $Root/exp/exec.$platform/HIRAM.x  # Path to model executable
 #--------------------------------------------------------------------------------
 # experiment
-set npes    = 90                                      # Number of processors
+set npes    = 96                                        # Number of processors
 set expname = CTL1990_${platform}_${npes}PE             # Experiment name
 set workdir = /scratch/gpfs/GEOCLIM/$USER/tiger3/HIRAM/work/$expname    # Where model is run and
 set num_executions = 1                                   # Number of times the model is run. Each run restarts from previous run.
@@ -40,7 +40,8 @@ set datatable  = /scratch/gpfs/GEOCLIM/gr7610/tiger3/HIRAM-AQP/exp/data_table   
 # The gaea locations of the input data sets are listed below
 # Modified to Tiger locations by GAV - 31-May-2017
 set input_data_dir = $Root/INPUT
-#set ice_data = $Root/input_wy/FROM_AM4_default_input/v201906/hadisst_ice.clim.1986-2005.repeat.nc
+set initCond = /scratch/gpfs/GEOCLIM/gr7610/tiger3/HIRAM-AQP/aqua/aqua_input/archive/C180_aquasom_ic.tar
+set gridspec = /scratch/gpfs/GEOCLIM/gr7610/tiger3/HIRAM-AQP/aqua/aqua_input/archive/C180.aqua_new.mosaic.tar
 set sst_data = $Root/input_WY/FROM_AM4_default_input/v201906/hadisst_sst.clim.1986-2005.repeat.0100-0401.nc
 set ice_data = $Root/input_WY/FROM_AM4_default_input/v201906/hadisst_ice.clim.1986-2005.repeat.0100-0401.nc
 
@@ -52,7 +53,6 @@ set ice_data = $Root/input_WY/FROM_AM4_default_input/v201906/hadisst_ice.clim.19
 # post-processing tools
 set time_stamp    = $Root/bin/time_stamp.csh             # Path to timestamp.csh
 set mppnccombine  = $Root/bin/mppnccombine.$platform     # Path to mppnccombine
-set landnccombine = $Root/bin/landnccombine.$platform    # Path to landnccombine
 set fregrid       = $Root/bin/fregrid_parallel.$platform # Path to fregrid
                                                          # model output is put 
 #--------------------------------------------------------------------------------
@@ -96,14 +96,43 @@ endif
 #--------------------------------------------------------------------------------
 # WY: get input data and initial condition files for the first run.
 cd $workdir/INPUT
+
+# Put the gridspec file into INPUT directory and untar it
+cp $gridspec $gridspec:t
+tar -xvf $gridspec:t
+rm -f $gridspec:t
+
 if ( ! -f coupler.res ) then
     #tar xvf $input_data
-    ln -s $input_data_dir/* .
-    # tar xvf $initCond  #default IC data included in $input_data_dir
-    # rm hurrell_sst.data.nc
-    # rm hurrell_ice.data.nc
-    ln -s $sst_data hurrell_sst.data.nc
-    ln -s $ice_data hurrell_ice.data.nc
+    ln -s ${input_data_dir}/aqua_ozone.nc .
+    ln -s ${input_data_dir}/aerosol.optical.dat .
+    ln -s ${input_data_dir}/aerosol.climatology.nc .
+    ln -s ${input_data_dir}/albedo.data.nc .
+    ln -s ${input_data_dir}/BetaDistributionTable.txt .
+    ln -s ${input_data_dir}/cns_*.nc .
+    ln -s ${input_data_dir}/cover_type_field.nc
+    ln -s ${input_data_dir}/esf_sw_input_data_n38b18 .
+    ln -s ${input_data_dir}/esf_sw_input_data_n72b25 .
+    ln -s ${input_data_dir}/h2ocoeff_ckd_0_3000_10cm_hi00 .
+    ln -s ${input_data_dir}/h2ocoeff_ckd_speccombwidebds_hi00 .
+    ln -s ${input_data_dir}/h2ocoeff_ckd_speccombwidebds_hi92 .
+    ln -s ${input_data_dir}/h2o12001400_hi00_data .
+    ln -s ${input_data_dir}/h2o12001400_hi92_data .
+    ln -s ${input_data_dir}/h2ockd2.1_corrdata .
+    ln -s ${input_data_dir}/h2ockd2.4_corrdata .
+    ln -s ${input_data_dir}/h2ockd2.1_data .
+    ln -s ${input_data_dir}/id* .
+    ln -s ${input_data_dir}/navy_topography.data.nc .
+    ln -s ${input_data_dir}/o3.climatology.nc .
+    ln -s ${input_data_dir}/o39001200_hi00_data .
+    ln -s ${input_data_dir}/o39001200_hi92_data .
+    ln -s ${input_data_dir}/radfn_5-2995_100-490k .
+    ln -s ${input_data_dir}/stdlvls .
+    ln -s ${input_data_dir}/id1ch4* .
+ 
+    cp $initCond $initCond:t
+    tar -xvf $initCond  #default IC data included in $input_data_dir
+    rm -f $initCond:t
 endif
 #
 
@@ -156,25 +185,7 @@ foreach ncfile (`/bin/ls *.nc.0000`)
   endif
 end
 #--------------------------------------------------------------------------------
-# Add the time stamp to remaining diagnostic files (those not distributed)
-mv atmos_scalar.nc $date_name.atmos_scalar.nc
-#mv ocean_scalar.nc $date_name.ocean_scalar.nc
-#--------------------------------------------------------------------------------
 cd $workdir/RESTART
-#--------------------------------------------------------------------------------
-# combine land restart files and remove the uncombined files
-foreach landname (cana glac lake land snow soil vegn1 vegn2)
-  foreach tilenum (1 2 3 4 5 6)
-    set distfiles=($landname.res.tile$tilenum.nc.[0-9][0-9][0-9][0-9])
-    $landnccombine $distfiles $landname.res.tile$tilenum.nc
-    if ($status == 0) then
-      rm -f $distfiles
-    else
-      echo "Error in execution of $landnccombine while working on $landname.res.tile$tilenum.nc"
-      exit 1
-    endif
-  end
-end
 #--------------------------------------------------------------------------------
 # combine remaining restart files and remove the uncombined files
 foreach ncfile (`/bin/ls *.nc.0000`)

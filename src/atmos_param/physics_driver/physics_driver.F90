@@ -1410,6 +1410,7 @@ subroutine physics_driver_down (is, ie, js, je,                       &
                                 phalfgrey,                            &
                                 u, v, t, q, r, um, vm, tm, qm, rm,    &
                                 frac_land, rough_mom,                 &
+                                frac_open_sea, &
                                 albedo, albedo_vis_dir, albedo_nir_dir,&
                                 albedo_vis_dif, albedo_nir_dif,       &
                                 t_surf_rad,                           &
@@ -1455,7 +1456,7 @@ real,dimension(:,:),     intent(in)             :: frac_land,   &
                                                    albedo_vis_dir, albedo_nir_dir, &
                                                    albedo_vis_dif, albedo_nir_dif, &
                                                    u_star, b_star,    &
-                                                   q_star, dtau_du, dtau_dv
+                                                   q_star, dtau_du, dtau_dv, frac_open_sea
 real,dimension(:,:),     intent(inout)          :: tau_x,  tau_y
 real,dimension(:,:,:),   intent(inout)          :: udt,vdt,tdt,qdt
 real,dimension(:,:,:,:), intent(inout)          :: rdt
@@ -2170,6 +2171,7 @@ real,  dimension(:,:,:), intent(out)  ,optional :: diffm, difft
       call mpp_clock_begin ( tracer_clock )
       call atmos_tracer_driver (is, ie, js, je, Time, lon, lat,  &
                                 area, z_pbl, rough_mom,         &
+                                frac_open_sea, &
                                 frac_land, p_half, p_full,  &
                                 u, v, t, q, r, &
                                 rm, rdt, dt, &

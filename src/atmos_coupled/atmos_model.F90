@@ -142,6 +142,7 @@ type land_ice_atmos_boundary_type
    real, dimension(:,:),   pointer :: b_star         =>NULL() ! bouyancy scale
    real, dimension(:,:),   pointer :: q_star         =>NULL() ! moisture scale
    real, dimension(:,:),   pointer :: rough_mom      =>NULL() ! surface roughness (used for momentum)
+   real, dimension(:,:),   pointer :: frac_open_sea  =>null() ! non-seaice fraction (%)
    real, dimension(:,:,:), pointer :: data           =>NULL() !collective field for "named" fields above
    integer                         :: xtype                   !REGRID, REDIST or DIRECT
 end type land_ice_atmos_boundary_type
@@ -239,6 +240,7 @@ subroutine update_atmos_model_down( Surface_boundary, Atmos )
                           Surface_boundary%dtaudv,      &
                           Surface_boundary%u_flux,      &
                           Surface_boundary%v_flux,      &
+                          Surface_boundary%frac_open_sea, &
                           Atmos%gust,                   &
                           Atmos%coszen,                 &
                           Atmos%flux_sw,                &

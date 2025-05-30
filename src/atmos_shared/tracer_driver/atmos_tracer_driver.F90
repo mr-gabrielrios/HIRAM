@@ -388,6 +388,7 @@ contains
 !   </IN>
  subroutine atmos_tracer_driver (is, ie, js, je, Time, lon, lat,  &
                            area, z_pbl, rough_mom, &
+                           frac_open_sea, &
                            land, phalf, pfull,     &
                            u, v, t, q, r,          &
                            rm, rdt, dt,     &
@@ -406,7 +407,7 @@ type(time_type), intent(in)                   :: Time
 real, intent(in),    dimension(:,:)           :: lon, lat
 real, intent(in),    dimension(:,:)           :: u_star, b_star, q_star
 real, intent(in),    dimension(:,:)           :: land
-real, intent(in),    dimension(:,:)           :: area, z_pbl, rough_mom
+real, intent(in),    dimension(:,:)           :: area, z_pbl, rough_mom, frac_open_sea
 real, intent(in),    dimension(:,:,:)         :: phalf, pfull
 real, intent(in),    dimension(:,:,:)         :: u, v, t, q
 real, intent(inout), dimension(:,:,:,:)       :: r
