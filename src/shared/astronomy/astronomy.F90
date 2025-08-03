@@ -47,7 +47,7 @@ private
 !----------- version number for this module --------------------------
 
 character(len=128)  :: version =  '$Id: astronomy.F90,v 17.0.10.1 2010/08/31 14:21:37 z1l Exp $'
-character(len=128)  :: tagname =  '$Name: hiram_20101115_bw $'
+character(len=128)  :: tagname =  '$Name: siena_prerelease3 $'
 
 
 !---------------------------------------------------------------------
@@ -58,7 +58,8 @@ public       &
               set_orbital_parameters, get_orbital_parameters, &
               set_ref_date_of_ae, get_ref_date_of_ae,  &
               diurnal_solar, daily_mean_solar, annual_mean_solar,  &
-              astronomy_end, universal_time, orbital_time
+              astronomy_end, universal_time, orbital_time, &
+	      idealized_solar, idealized_diurnal_solar ! Tim M. mod
 
 interface diurnal_solar
    module procedure diurnal_solar_2d
@@ -85,6 +86,23 @@ interface annual_mean_solar
    module procedure annual_mean_solar_1d
    module procedure annual_mean_solar_2level
 end interface
+
+! Tim M. mod start
+interface idealized_solar
+   module procedure idealized_solar_2d
+   module procedure idealized_solar_1d
+   module procedure idealized_solar_2level
+end interface
+
+interface idealized_diurnal_solar
+   module procedure idealized_diurnal_solar_2d
+   module procedure idealized_diurnal_solar_1d
+   module procedure idealized_diurnal_solar_0d
+   module procedure idealized_diurnal_solar_cal_2d
+   module procedure idealized_diurnal_solar_cal_1d
+   module procedure idealized_diurnal_solar_cal_0d
+end interface
+! Tim M. mod end
 
 interface get_period
    module procedure get_period_time_type, get_period_integer
@@ -137,12 +155,15 @@ integer :: minute_ae = 37    ! minute of specified autumnal equinox
 integer :: second_ae = 0     ! second of specified autumnal equinox
 integer :: num_angles = 3600 ! number of intervals into which the year 
                              ! is divided to compute orbital positions
-
+! Tim M. mod start
+real    :: del_sol     = 1.0  ! coefficient for second legendre polynomial
+real    :: cosz_factor = 1.0  ! coefficient multiplying cosz for idealized
+! Tim M. mod end
 
 namelist /astronomy_nml/ ecc, obliq, per, period, &
                          year_ae, month_ae,  day_ae,         & 
                          hour_ae, minute_ae, second_ae, &
-                         num_angles
+                         num_angles, del_sol, cosz_factor ! Tim M. mod
 
 !--------------------------------------------------------------------
 !------   public data ----------
@@ -170,7 +191,9 @@ real    :: twopi                    ! 2 *PI
 logical :: module_is_initialized=     &
                           .false.   ! has the module been initialized ?
 
-real, dimension(:), allocatable ::       &
+!real, dimension(:), allocatable ::       &
+! Tim M. mod (these need to be 2d for cube sphere)
+real, dimension(:,:), allocatable ::       &
                        cosz_ann, &  ! annual mean cos of zenith angle
                        solar_ann, & ! annual mean solar factor
                        fracday_ann  ! annual mean daylight fraction
@@ -346,9 +369,9 @@ real,   dimension(:,:), intent(in), optional   :: lonb
       if (present(latb)) then
         jd = size(latb,2) - 1
         id = size(lonb,1) - 1
-        allocate (cosz_ann(jd))
-        allocate (solar_ann(jd))
-        allocate (fracday_ann(jd))
+        allocate (cosz_ann(id,jd))
+        allocate (solar_ann(id,jd))
+        allocate (fracday_ann(id,jd))
         total_pts = jd*id
       endif
      
@@ -2012,9 +2035,11 @@ real,                 intent(out)  :: rr_out
       where (h == 0.0)
         cosz = 0.0
       elsewhere
-        cosz = sin(lat)*sin(dec) + cos(lat)*cos(dec)*sin(h)/h
+        ! Tim M. mod: cosz_factor
+        cosz = ( sin(lat)*sin(dec) + cos(lat)*cos(dec)*sin(h)/h )*cosz_factor
       end where
-      h_out = h/PI
+      ! Tim M. mod: cosz_factor
+      h_out = h/PI/cosz_factor
       rr_out = rr
 !--------------------------------------------------------------------
 
@@ -2724,9 +2749,13 @@ real,                    intent(out)   :: rrsun
 !    those variables are present; i.e., not the spectral 2-layer model.
 !---------------------------------------------------------------------
         if (allocated (cosz_ann)) then
-          cosz_ann(js:je) = cosz(1,:)
-          solar_ann(js:je)   = solar(1,:)
-          fracday_ann(js:je) = fracday(1,:)
+! this will not work for cubed sphere Tim M.
+!          cosz_ann(js:je) = cosz(1,:)
+!          solar_ann(js:je)   = solar(1,:)
+!          fracday_ann(js:je) = fracday(1,:)
+          cosz_ann    = cosz
+          solar_ann   = solar
+          fracday_ann = fracday
           rrsun_ann = rrsun
 
 !--------------------------------------------------------------------
@@ -2744,11 +2773,14 @@ real,                    intent(out)   :: rrsun
 !--------------------------------------------------------------------
       else
         if (allocated (cosz_ann)) then
-          do i=1, size(lat,1)
-            cosz(i,:)    = cosz_ann(js:je)
-            solar(i,:)   = solar_ann(js:je)
-            fracday(i,:) = fracday_ann(js:je)
-          end do
+!          do i=1, size(lat,1)
+!            cosz(i,:)    = cosz_ann(js:je)
+!            solar(i,:)   = solar_ann(js:je)
+!            fracday(i,:) = fracday_ann(js:je)
+!          end do
+          cosz    = cosz_ann
+          solar   = solar_ann
+          fracday = fracday_ann
           rrsun = rrsun_ann
         endif
       endif
@@ -2856,9 +2888,10 @@ real,               intent(out)    :: rrsun_out
 !    variables contain the results at the desired latitudes.
 !--------------------------------------------------------------------
       else
-        cosz(:)    = cosz_ann(jst:jnd)
-        solar(:)   = solar_ann(jst:jnd)
-        fracday(:) = fracday_ann(jst:jnd)
+! Tim M. unsure of putting 1 before or after j
+        cosz(:)    = cosz_ann(1,jst:jnd)
+        solar(:)   = solar_ann(1,jst:jnd)
+        fracday(:) = fracday_ann(1,jst:jnd)
         rrsun      = rrsun_ann
       endif
 
@@ -2967,6 +3000,1266 @@ end subroutine annual_mean_solar_2level
 !
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!                                
+!                   INTERFACE IDEALIZED_SOLAR
+!
+!  call idealized_solar (js, je, lat, cosz, solar, fracday, rrsun)
+!     or
+!  call idealized_solar (lat, cosz, solar)
+!
+!  the second interface above is used by the spectral 2-layer model,
+!  which requires only cosz and solar as output arguments, and which
+!  makes this call during the initialization phase of the model.
+
+!  separate routines exist within this interface for 1D or 2D input 
+!  and output fields:
+!
+!    real, intent(in), dimension(:,:) :: lat
+! OR real, intent(in), dimension(:)   :: lat
+!
+!    real, intent(out), dimension(:,:) :: cosz, solar, fracday
+! OR real, intent(out), dimension(:)   :: cosz, solar, fracday
+!
+!---------------------------------------------------------------------
+!  intent(in) variables: 
+!
+!     js, je         starting/ ending subdomain j indices of data in 
+!                    the physics wiondow being integrated
+!     lat            latitudes of model grid points 
+!                    [ radians ]
+!     
+!
+!  intent(out) variables:
+!
+!     cosz           cosz is the cosine of an effective zenith angle 
+!                    that would produce the desired idealized solar flux
+!                    [ dimensionless ]
+!     solar          normalized solar flux, given by idealized function
+!                    of latitue
+!                    equal to the product of fracday*cosz*rrsun
+!                    [ dimensionless ]
+!     fracday        daylight fraction calculated so as to make the 
+!                    average flux (solar) equal to the product of the
+!                    cosz * this fracday * assumed 
+!                    annual mean avg earth-sun distance of 1.0.
+!                    [ dimensionless ]
+!     rrsun          annual mean earth-sun distance (r) relative to 
+!                    semi-major axis of orbital ellipse (a); assumed
+!                    to be 1.0
+!                    [ dimensionless ]
+!
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+
+
+!--------------------------------------------------------------
+! <SUBROUTINE NAME="idealized_solar_2d">
+!  <OVERVIEW>
+!    idealized_solar_2d returns 2d fields of annual mean values of
+!    the cosine of zenith angle, daylight fraction and earth-sun 
+!    distance at the specified latitude.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_solar_2d returns 2d fields of annual mean values of
+!    the cosine of zenith angle, daylight fraction and earth-sun 
+!    distance at the specified latitude.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_solar_2d (js, je, lat, cosz, solar, fracday,  &
+!                                 rrsun)
+!  </TEMPLATE>
+!  <IN NAME="js, je" TYPE="real">
+!   Starting/ending index of latitude window
+!  </IN>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN>
+!  <IN NAME="time" TYPE="time_type">
+!   time of year; autumnal equinox = 0.0, one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="solar" TYPE="real">
+!   shortwave flux factor: cosine of zenith angle *
+!                    daylight fraction / (earth-sun distance squared)
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+! </SUBROUTINE>
+!
+subroutine idealized_solar_2d (js, je, lat, cosz, solar, fracday,  &
+                                 rrsun)
+
+!---------------------------------------------------------------------
+!    idealized_solar_2d returns 2d fields of idealized values of
+!    the cosine of zenith angle, daylight fraction and earth-sun 
+!    distance at the specified latitude. 
+!---------------------------------------------------------------------
+
+!--------------------------------------------------------------------
+integer,                 intent(in)    :: js, je
+real, dimension(:,:),    intent(in)    :: lat
+real, dimension(:,:),    intent(out)   :: solar, cosz, fracday
+real,                    intent(out)   :: rrsun
+!--------------------------------------------------------------------
+
+!--------------------------------------------------------------------
+!  local variables
+
+      real, dimension(size(lat,1),size(lat,2)) :: ss,p2
+      real    :: t
+      integer :: n, i
+
+! sine squared of latitude 
+      ss = sin(lat)**2
+! second legendre polynomial
+      p2 = (1.0 - 3.0*ss)/4.0
+
+!----------------------------------------------------------------------
+!    determine solar flux and product of cosz and solar flux 
+!    for second legendre polynomial
+!    cosz_factor multiplies the zenith angle to approximately
+!    take into account the effect of flux-weighted averaging
+!    (cf. annual_mean section)
+!    in annual mean, 0.5 is a good approximation (I. Held thesis)
+!----------------------------------------------------------------------
+      do i=1, size(lat,1)
+        solar(i,:) = 0.25*(1 + del_sol*p2(i,js:je))
+	cosz(i,:) = solar(i,:) * cosz_factor
+      enddo	
+
+!--------------------------------------------------------------------
+!   cosine of the zenith angle
+!--------------------------------------------------------------------
+        where(solar.eq.0.0) 
+          cosz = 0.0
+        elsewhere
+          cosz = cosz
+        end where
+
+!-------------------------------------------------------------------
+!    define avg fracday such as to make the avg flux (solar) equal to 
+!    the product of the avg cosz * avg fracday * assumed mean avg 
+!    radius of 1.0. 
+!    allow cosz_factor .ne. 1 to give correct solar flux
+!--------------------------------------------------------------------
+        where(solar .eq. 0.0) 
+          fracday = 0.0
+        elsewhere
+          fracday = solar/cosz
+!          fracday = 1.0
+        end where
+        rrsun = 1.00
+
+!----------------------------------------------------------------------
+
+
+end subroutine idealized_solar_2d
+
+
+
+!#####################################################################
+! <SUBROUTINE NAME="idealized_solar_1d">
+!  <OVERVIEW>
+!    idealized_solar_1d creates 2-d input fields from 1-d input fields
+!    and then calls idealized_solar_2d to obtain 2-d output fields 
+!    which are then stored into 1-d fields for return to the calling 
+!    subroutine.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_solar_1d creates 2-d input fields from 1-d input fields
+!    and then calls idealized_solar_2d to obtain 2-d output fields 
+!    which are then stored into 1-d fields for return to the calling 
+!    subroutine.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_solar_1d (jst, jnd, lat, cosz, solar,  &
+!                                 fracday, rrsun_out)
+!  </TEMPLATE>
+!  <IN NAME="jst, jnd" TYPE="real">
+!   Starting/ending index of latitude window
+!  </IN>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN>
+!  <IN NAME="time" TYPE="time_type">
+!   time of year; autumnal equinox = 0.0, one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="solar" TYPE="real">
+!   shortwave flux factor: cosine of zenith angle *
+!                    daylight fraction / (earth-sun distance squared)
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun_out" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+! </SUBROUTINE>
+!
+subroutine idealized_solar_1d (jst, jnd, lat, cosz, solar,  &
+                                 fracday, rrsun_out)
+
+!---------------------------------------------------------------------
+!    idealized_solar_1d creates 2-d input fields from 1-d input fields
+!    and then calls idealized_solar_2d to obtain 2-d output fields 
+!    which are then stored into 1-d fields for return to the calling 
+!    subroutine.
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+integer,            intent(in)     :: jst, jnd
+real, dimension(:), intent(in)     :: lat(:)
+real, dimension(:), intent(out)    :: cosz, solar,  fracday
+real,               intent(out)    :: rrsun_out
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+!  local variables
+
+      real, dimension(size(lat),1) :: lat_2d, solar_2d, cosz_2d,   &
+                                      fracday_2d
+      real :: rrsun
+
+!--------------------------------------------------------------------
+!    define 2-d versions of input data array.
+!--------------------------------------------------------------------
+      lat_2d(:,1) = lat
+
+!--------------------------------------------------------------------
+!    call idealized_solar_2d to calculate the astronomy fields.
+!--------------------------------------------------------------------
+      call idealized_solar_2d (jst, jnd, lat_2d, cosz_2d,   &
+                                         solar_2d, fracday_2d, rrsun)
+
+!-------------------------------------------------------------------
+!    place output fields into 1-D arrays for return to calling routine.
+!-------------------------------------------------------------------
+      fracday = fracday_2d(:,1)
+      rrsun_out = rrsun
+      solar = solar_2d(:,1)
+      cosz  =  cosz_2d(:,1)
+
+end subroutine idealized_solar_1d
+
+
+
+!####################################################################
+! <SUBROUTINE NAME="idealized_solar_2level">
+!  <OVERVIEW>
+!    idealized_solar_2level creates 2-d input fields from 1-d input 
+!    fields and then calls idealized_solar_2d to obtain 2-d output 
+!    fields which are then stored into 1-d fields for return to the 
+!    calling subroutine. this subroutine will be called during model
+!    initialization.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_solar_2level creates 2-d input fields from 1-d input 
+!    fields and then calls idealized_solar_2d to obtain 2-d output 
+!    fields which are then stored into 1-d fields for return to the 
+!    calling subroutine. this subroutine will be called during model
+!    initialization.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_solar_2level (lat, cosz, solar)
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="solar" TYPE="real">
+!   shortwave flux factor: cosine of zenith angle *
+!                    daylight fraction / (earth-sun distance squared)
+!  </OUT>
+! </SUBROUTINE>
+!
+subroutine idealized_solar_2level (lat, cosz, solar)
+
+!---------------------------------------------------------------------
+!    idealized_solar_2level creates 2-d input fields from 1-d input 
+!    fields and then calls idealized_solar_2d to obtain 2-d output 
+!    fields which are then stored into 1-d fields for return to the 
+!    calling subroutine. this subroutine will be called during model
+!    initialization.
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+real, dimension(:), intent(in)     :: lat
+real, dimension(:), intent(out)    :: cosz, solar
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+!  local variables
+
+      real, dimension(size(lat),1) :: lat_2d, solar_2d, cosz_2d,   &
+                                      fracday_2d
+      integer :: jst, jnd
+      real    :: rrsun
+
+!--------------------------------------------------------------------
+!    define 2-d versions of input data array.
+!--------------------------------------------------------------------
+      lat_2d(:,1) = lat
+      jst = 1
+      jnd = size(lat(:))
+
+!--------------------------------------------------------------------
+!    call idealized_solar_2d to calculate the astronomy fields.
+!--------------------------------------------------------------------
+      call idealized_solar_2d (jst, jnd, lat_2d, cosz_2d,   &
+                                         solar_2d, fracday_2d, rrsun)
+
+!-------------------------------------------------------------------
+!    place output fields into 1-D arrays for return to calling routine.
+!-------------------------------------------------------------------
+      solar = solar_2d(:,1)
+      cosz  =  cosz_2d(:,1)
+
+end subroutine idealized_solar_2level
+
+
+!####################################################################
+
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!                                
+!                END INTERFACE IDEALIZED_SOLAR
+!
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!                                
+!                    INTERFACE IDEALIZED_DIURNAL_SOLAR
+!
+! call idealized_diurnal_solar (lat, lon, time, cosz, fracday, rrsun, dt_time)
+!   or 
+! call idealized_diurnal_solar (lat, lon, gmt, time_since_ae, cosz, fracday, 
+!                     rrsun, dt)
+!
+!  the first option (used in conjunction with time_manager_mod)      
+!  generates the real variables gmt and time_since_ae from the 
+!  time_type input, and then calls idealized_diurnal_solar with these real
+!  inputs. 
+!
+!  the time of day is set by 
+!    real, intent(in) :: gmt
+!  the time of year is set by 
+!    real, intent(in) :: time_since_ae
+!  with time_type input, both of these are extracted from 
+!    type(time_type), intent(in) :: time
+!
+!
+!  separate routines exist within this interface for scalar, 
+!  1D or 2D input and output fields:
+!
+!    real, intent(in), dimension(:,:) :: lat, lon
+! OR real, intent(in), dimension(:)   :: lat, lon
+! OR real, intent(in)                 :: lat, lon
+!
+!    real, intent(out), dimension(:,:) :: cosz, fracday
+! OR real, intent(out), dimension(:)   :: cosz, fracday
+! OR real, intent(out)                 :: cosz, fracday
+!
+!  one may also average the output fields over the time interval 
+!  between gmt and gmt + dt by including the optional argument dt (or 
+!  dt_time). dt is measured in radians and must be less than pi 
+!  (1/2 day). this average is computed analytically, and should be 
+!  exact except for the fact that changes in earth-sun distance over 
+!  the time interval dt are ignored. in the context of a diurnal GCM, 
+!  this option should always be employed to insure that the total flux 
+!  at the top of the atmosphere is not modified by time truncation 
+!  error.
+!
+!    real, intent(in), optional :: dt
+!    type(time_type), optional :: dt_time
+! (see test.90 for examples of the use of these types)
+!
+!--------------------------------------------------------------------
+!
+!  intent(in) variables:
+!
+!     lat            latitudes of model grid points 
+!                    [ radians ]
+!     lon            longitudes of model grid points
+!                    [ radians ]
+!     gmt            time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!                    [ radians ]
+!     time_since_ae  time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!                    [ radians ]
+!     time           time at which astronomical values are desired
+!                    time_type variable [ seconds, days]
+!     
+!
+!  intent(out) variables:
+!
+!     cosz           cosine of zenith angle, set to zero when entire
+!                    period is in darkness
+!                    [ dimensionless ]
+!     fracday        daylight fraction of time interval
+!                    [ dimensionless ]
+!     rrsun          earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!                    [ dimensionless ]
+!
+!  intent(in), optional variables:
+!
+!     dt            time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous. 
+!                   [ radians ], (1 day = 2 * pi)
+!     dt_time       as in dt, but dt_time is a time_type variable
+!                   time_type [ days, seconds ]
+!
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+! <SUBROUTINE NAME="idealized_diurnal_solar_2d">
+!  <OVERVIEW>
+!    idealized_diurnal_solar_2d returns 2d fields of cosine of zenith angle, 
+!    daylight fraction and earth-sun distance at the specified lati-
+!    tudes, longitudes and time. these values may be instantaneous
+!    or averaged over a specified time interval.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_diurnal_solar_2d returns 2d fields of cosine of zenith angle, 
+!    daylight fraction and earth-sun distance at the specified lati-
+!    tudes, longitudes and time. these values may be instantaneous
+!    or averaged over a specified time interval.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_diurnal_solar_2d (lat, lon, gmt, time_since_ae, cosz, &
+!                             fracday, rrsun, dt_time) 
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN> 
+!  <IN NAME="lon" TYPE="real">
+!   longitude of model grid points 
+!  </IN>
+!  <IN NAME="gmt" TYPE="real">
+!   time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!  </IN>
+!  <IN NAME="time_since_ae" TYPE="real">
+!   time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+!  <IN NAME="dt" TYPE="real">
+!   OPTIONAL: time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous.
+!  </IN>
+! </SUBROUTINE>
+!
+subroutine idealized_diurnal_solar_2d (lat, lon, gmt, time_since_ae, cosz, &
+                             fracday, rrsun, dt, allow_negative_cosz, &
+                             half_day_out) 
+
+!---------------------------------------------------------------------
+!    idealized_diurnal_solar_2d returns 2d fields of cosine of zenith angle, 
+!    daylight fraction and earth-sun distance at the specified lati-
+!    tudes, longitudes and time. these values may be instantaneous
+!    or averaged over a specified time interval.
+!---------------------------------------------------------------------
+
+real, dimension(:,:), intent(in)           :: lat, lon
+real,                 intent(in)           :: gmt, time_since_ae
+real, dimension(:,:), intent(out)          :: cosz, fracday
+real,                 intent(out)          :: rrsun
+real,                 intent(in), optional :: dt
+logical,              intent(in), optional :: allow_negative_cosz
+real, dimension(:,:), intent(out), optional :: half_day_out
+
+
+!---------------------------------------------------------------------
+!   local variables
+
+      real, dimension(size(lat,1),size(lat,2)) :: t, tt, h, aa, bb,  &
+                                                  st, stt, sh
+      real                                     :: ang, dec
+      logical :: Lallow_negative
+
+!  local variables
+
+      real, dimension(size(lat,1),size(lat,2)) :: ss,p2,flux
+!      integer :: n, i
+
+! sine squared of latitude 
+      ss = sin(lat)**2
+! second legendre polynomial
+      p2 = (1.0 - 3.0*ss)/4.0
+
+!---------------------------------------------------------------------
+!   local variables
+!
+!    t           time of day with respect to local noon (2 pi = 1 day)
+!                [ radians ]
+!    tt          end of averaging period [ radians ]
+!    h           half of the daily period of daylight, centered at noon
+!                [ radians, -pi --> pi ]
+!    aa          sin(lat) * sin(declination)
+!    bb          cos(lat) * cos(declination)
+!    st          sine of time of day
+!    stt         sine of time of day at end of averaging period
+!    sh          sine of half-day period
+!    ang         position of earth in its orbit wrt autumnal equinox
+!                [ radians ]
+!    dec         earth's declination [ radians ]
+!    
+!--------------------------------------------------------------------
+
+!--------------------------------------------------------------------
+!    be sure the time in the annual cycle is legitimate.
+!---------------------------------------------------------------------
+      if (time_since_ae < 0.0 .or. time_since_ae > twopi) &
+          call error_mesg('astronomy_mod', &
+                    'time_since_ae not between 0 and 2pi', FATAL)
+
+!--------------------------------------------------------------------
+!    be sure the time at longitude = 0.0 is legitimate.
+!---------------------------------------------------------------------
+      if (gmt < 0.0 .or. gmt > twopi) &
+         call error_mesg('astronomy_mod', &
+                    'gmt not between 0 and 2pi', FATAL)
+
+!---------------------------------------------------------------------
+!    define the orbital angle (location in year), solar declination and
+!    earth sun distance factor. use functions contained in this module.
+!---------------------------------------------------------------------
+      ang = angle(time_since_ae)
+      dec = declination(ang)
+      rrsun  = r_inv_squared(ang)
+
+!---------------------------------------------------------------------
+!    define terms needed in the cosine zenith angle equation.
+!--------------------------------------------------------------------
+      aa = sin(lat)*sin(dec)
+      bb = cos(lat)*cos(dec)
+
+!---------------------------------------------------------------------
+!    define local time. force it to be between -pi and pi.
+!--------------------------------------------------------------------
+      t = gmt + lon - PI
+      where(t >= PI) t = t - twopi  
+      where(t < -PI) t = t + twopi   
+
+      Lallow_negative = .false.
+      if (present(allow_negative_cosz)) then
+         if (allow_negative_cosz) Lallow_negative = .true.
+      end if
+
+!---------------------------------------------------------------------
+!    perform a time integration to obtain cosz and fracday if desired.
+!    output is valid over the period from t to t + dt.
+!--------------------------------------------------------------------
+      h   = half_day   (lat,dec)
+      
+      if ( present(half_day_out) ) then 
+         half_day_out = h
+      end if
+
+      if ( present(dt) ) then   ! (perform time averaging)
+        tt = t + dt
+        st  = sin(t)
+        stt = sin(tt)
+        sh  = sin(h)
+        cosz = 0.0
+
+        if (.not. Lallow_negative) then
+!-------------------------------------------------------------------
+!    case 1: entire averaging period is before sunrise.
+!-------------------------------------------------------------------
+        where (t < -h .and. tt < -h) cosz = 0.0
+
+!-------------------------------------------------------------------
+!    case 2: averaging period begins before sunrise, ends after sunrise
+!    but before sunset
+!-------------------------------------------------------------------
+        where ( (tt+h) /= 0.0 .and.   t < -h .and. abs(tt) <= h)   &
+             cosz = aa + bb*(stt + sh)/ (tt + h)
+
+!-------------------------------------------------------------------
+!    case 3: averaging period begins before sunrise, ends after sunset,
+!    but before the next sunrise. modify if averaging period extends 
+!    past the next day's sunrise, but if averaging period is less than 
+!    a half- day (pi) that circumstance will never occur.
+!-------------------------------------------------------------------
+        where (t < -h .and. h /= 0.0 .and. h < tt)    &
+              cosz = aa + bb*( sh + sh)/(h+h)
+
+!-------------------------------------------------------------------
+!    case 4: averaging period begins after sunrise, ends before sunset.
+!-------------------------------------------------------------------
+        where ( abs(t) <= h .and. abs(tt) <= h)    &
+             cosz = aa + bb*(stt - st)/ (tt - t)
+
+!-------------------------------------------------------------------
+!    case 5: averaging period begins after sunrise, ends after sunset. 
+!    modify when averaging period extends past the next day's sunrise.  
+!------------------------------------------------------------------- 
+        where ((h-t) /= 0.0 .and. abs(t) <= h .and.  h < tt)    &
+              cosz = aa + bb*(sh - st)/(h-t)
+
+!-------------------------------------------------------------------
+!    case 6: averaging period begins after sunrise , ends after the
+!    next day's sunrise. note that this includes the case when the
+!    day length is one day (h = pi).
+!-------------------------------------------------------------------
+        where (twopi - h < tt .and. (tt+h-twopi) /= 0.0 .and. t <= h ) &
+           cosz = (cosz*(h - t) + (aa*(tt + h - twopi) +     &
+            bb*(stt + sh))) / ((h - t) + (tt + h - twopi))
+
+!-------------------------------------------------------------------
+!    case 7: averaging period begins after sunset and ends before the
+!    next day's sunrise
+!-------------------------------------------------------------------
+        where(  h <  t .and. twopi - h >= tt  ) cosz = 0.0
+
+!-------------------------------------------------------------------
+!    case 8: averaging period begins after sunset and ends after the
+!    next day's sunrise but before the next day's sunset. if the
+!    averaging period is less than a half-day (pi) the latter
+!    circumstance will never occur.
+!-----------------------------------------------------------------
+        where(  h <  t .and. twopi - h < tt  ) 
+          cosz = aa + bb*(stt + sh) / (tt + h - twopi)
+        end where
+
+        else
+           cosz = aa + bb*(stt - st)/ (tt - t)
+        end if
+
+
+
+!-------------------------------------------------------------------
+!    day fraction is the fraction of the averaging period contained 
+!    within the (-h,h) period.
+!-------------------------------------------------------------------
+!        where (t < -h .and.      tt < -h)      fracday = 0.0
+!        where (t < -h .and. abs(tt) <= h)      fracday = (tt + h )/dt
+!        where (t < -h .and.       h < tt)      fracday = ( h + h )/dt
+!        where (abs(t) <= h .and. abs(tt) <= h) fracday = (tt - t )/dt
+!        where (abs(t) <= h .and.       h < tt) fracday = ( h - t )/dt
+!        where (      h <  t                 )  fracday = 0.0
+!        where (twopi - h < tt)                 fracday = fracday +  &
+!                                                         (tt + h - &
+!                                                         twopi)/dt      
+
+! Tim M. mod: fracday only a function of latitude
+! seems to be a problem with cosz = 0 combined with fracday != 0
+! for averaged formula (ok for instantaneous?)
+             flux = (1.0 + del_sol*p2)
+	     fracday = flux / cos(lat)
+
+!----------------------------------------------------------------------
+!    if instantaneous values are desired, define cosz at time t.
+!----------------------------------------------------------------------
+      else  ! (no time averaging)
+        if (.not. Lallow_negative) then
+           where (abs(t) < h)
+             ! original formulation
+             ! cosz = aa + bb*cos(t)
+             ! fracday = 1.0
+
+             ! Tim M. mod
+             cosz = aa + bb*cos(t)
+             flux = (1.0 + del_sol*p2)*PI/4.0
+	     fracday = flux / cos(lat)
+	     ! end Tim M. mod
+           elsewhere
+             cosz = 0.0
+             fracday = 0.0
+           end where
+        else
+           cosz = aa + bb*cos(t)
+           where (abs(t) < h)
+             fracday = 1.0
+           elsewhere
+             fracday = 0.0
+           end where
+        end if
+      end if
+
+!----------------------------------------------------------------------
+!    be sure that cosz is not negative.
+!----------------------------------------------------------------------
+!      if (.not. Lallow_negative) then
+         cosz = max(0.0, cosz)
+!      end if
+
+!--------------------------------------------------------------------
+
+
+
+end subroutine idealized_diurnal_solar_2d
+
+
+!######################################################################
+! <SUBROUTINE NAME="idealized_diurnal_solar_1d">
+!  <OVERVIEW>
+!    idealized_diurnal_solar_1d takes 1-d input fields, adds a second dimension
+!    and calls idealized_diurnal_solar_2d. on return, the 2d fields are returned
+!    to the original 1d fields.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_diurnal_solar_1d takes 1-d input fields, adds a second dimension
+!    and calls idealized_diurnal_solar_2d. on return, the 2d fields are returned
+!    to the original 1d fields.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_diurnal_solar_1d (lat, lon, gmt, time_since_ae, cosz, &
+!                             fracday, rrsun, dt) 
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN> 
+!  <IN NAME="lon" TYPE="real">
+!   longitude of model grid points 
+!  </IN>
+!  <IN NAME="gmt" TYPE="real">
+!   time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!  </IN>
+!  <IN NAME="time_since_ae" TYPE="real">
+!   time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+!  <IN NAME="dt" TYPE="real">
+!   OPTIONAL: time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous.
+!  </IN>
+! </SUBROUTINE>
+!
+subroutine idealized_diurnal_solar_1d (lat, lon, gmt, time_since_ae, cosz, &
+                             fracday, rrsun, dt, allow_negative_cosz, &
+                             half_day_out)
+
+!--------------------------------------------------------------------
+!    idealized_diurnal_solar_1d takes 1-d input fields, adds a second dimension
+!    and calls idealized_diurnal_solar_2d. on return, the 2d fields are returned
+!    to the original 1d fields.
+!----------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+real, dimension(:),  intent(in)           :: lat, lon
+real,                intent(in)           :: gmt, time_since_ae
+real, dimension(:),  intent(out)          :: cosz, fracday
+real,                intent(out)          :: rrsun
+real,                intent(in), optional :: dt
+logical,             intent(in), optional :: allow_negative_cosz
+real, dimension(:),  intent(out), optional :: half_day_out
+
+!---------------------------------------------------------------------
+!  local variables
+
+      real, dimension(size(lat),1) :: lat_2d, lon_2d, cosz_2d,   &
+                                      fracday_2d,halfday_2d
+
+!--------------------------------------------------------------------
+!    define 2-d versions of input data arrays.
+!--------------------------------------------------------------------
+      lat_2d(:,1) = lat
+      lon_2d(:,1) = lon
+
+!--------------------------------------------------------------------
+!    call idealized_diurnal_solar_2d to calculate astronomy fields.
+!--------------------------------------------------------------------
+!     if (present(dt)) then
+        call idealized_diurnal_solar_2d (lat_2d, lon_2d, gmt, time_since_ae,&
+                               cosz_2d, fracday_2d, rrsun, dt=dt, &
+                               allow_negative_cosz=allow_negative_cosz, &
+                               half_day_out=halfday_2d)
+!     else
+!       call idealized_diurnal_solar_2d (lat_2d, lon_2d, gmt, time_since_ae, &
+!                              cosz_2d, fracday_2d, rrsun)
+!     endif
+
+!-------------------------------------------------------------------
+!    place output fields into 1-d arguments for return to 
+!    calling routine.
+!-------------------------------------------------------------------
+      fracday = fracday_2d(:,1)
+      cosz  = cosz_2d (:,1)
+      if (present(half_day_out)) then 
+         half_day_out = halfday_2d(:,1)
+      end if
+
+
+end subroutine idealized_diurnal_solar_1d
+
+
+!#####################################################################
+! <SUBROUTINE NAME="idealized_diurnal_solar_0d">
+!  <OVERVIEW>
+!    idealized_diurnal_solar_0d takes scalar input fields, makes them into 2d
+!    arrays dimensioned (1,1), and calls idealized_diurnal_solar_2d. on return, 
+!    the 2d fields are converted back to the desired scalar output.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_diurnal_solar_0d takes scalar input fields, makes them into 2d
+!    arrays dimensioned (1,1), and calls idealized_diurnal_solar_2d. on return, 
+!    the 2d fields are converted back to the desired scalar output.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_diurnal_solar_0d (lat, lon, gmt, time_since_ae, cosz, &
+!                             fracday, rrsun, dt) 
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN> 
+!  <IN NAME="lon" TYPE="real">
+!   longitude of model grid points 
+!  </IN>
+!  <IN NAME="gmt" TYPE="real">
+!   time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!  </IN>
+!  <IN NAME="time_since_ae" TYPE="real">
+!   time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+!  <IN NAME="dt" TYPE="real">
+!   OPTIONAL: time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous.
+!  </IN>
+! </SUBROUTINE>
+!
+subroutine idealized_diurnal_solar_0d (lat, lon, gmt, time_since_ae, cosz,  &
+                             fracday, rrsun, dt, allow_negative_cosz, &
+                             half_day_out)
+
+!--------------------------------------------------------------------
+!    idealized_diurnal_solar_0d takes scalar input fields, makes them into 2d
+!    arrays dimensioned (1,1), and calls idealized_diurnal_solar_2d. on return, 
+!    the 2d fields are converted back to the desired scalar output.
+!----------------------------------------------------------------------
+
+real, intent(in)           :: lat, lon, gmt, time_since_ae
+real, intent(out)          :: cosz, fracday, rrsun
+real, intent(in), optional :: dt
+logical,intent(in), optional :: allow_negative_cosz
+real, intent(out), optional :: half_day_out
+
+!--------------------------------------------------------------------
+!  local variables:
+!
+      real, dimension(1,1) :: lat_2d, lon_2d, cosz_2d, fracday_2d, halfday_2d
+
+!---------------------------------------------------------------------
+!    create 2d arrays from the scalar input fields.
+!---------------------------------------------------------------------
+      lat_2d = lat
+      lon_2d = lon
+
+!--------------------------------------------------------------------
+!    call idealized_diurnal_solar_2d to calculate astronomy fields.
+!--------------------------------------------------------------------
+!     if (present(dt)) then
+        call idealized_diurnal_solar_2d (lat_2d, lon_2d, gmt, time_since_ae,  &
+                               cosz_2d, fracday_2d, rrsun, dt=dt, &
+                               allow_negative_cosz=allow_negative_cosz, &
+                               half_day_out=halfday_2d)
+!     else
+!       call idealized_diurnal_solar_2d (lat_2d, lon_2d, gmt, time_since_ae, &
+!                              cosz_2d, fracday_2d, rrsun)
+!     end if
+
+!-------------------------------------------------------------------
+!    place output fields into scalars for return to calling routine.
+!-------------------------------------------------------------------
+      fracday = fracday_2d(1,1)
+      cosz = cosz_2d(1,1)
+      if (present(half_day_out)) then 
+         half_day_out = halfday_2d(1,1)
+      end if
+
+
+
+end subroutine idealized_diurnal_solar_0d
+
+
+
+!####################################################################
+! <SUBROUTINE NAME="idealized_diurnal_solar_cal_2d">
+!  <OVERVIEW>
+!    idealized_diurnal_solar_cal_2d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_diurnal_solar_cal_2d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_diurnal_solar_cal_2d (lat, lon, gmt, time_since_ae, cosz, &
+!                             fracday, rrsun, dt) 
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN> 
+!  <IN NAME="lon" TYPE="real">
+!   longitude of model grid points 
+!  </IN>
+!  <IN NAME="gmt" TYPE="real">
+!   time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!  </IN>
+!  <IN NAME="time_since_ae" TYPE="real">
+!   time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+!  <IN NAME="dt_time" TYPE="time_type">
+!   OPTIONAL: time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous.
+!  </IN>
+! </SUBROUTINE>
+!
+subroutine idealized_diurnal_solar_cal_2d (lat, lon, time, cosz, fracday,   &
+                                 rrsun, dt_time, allow_negative_cosz, &
+                                 half_day_out) 
+
+!-------------------------------------------------------------------
+!    idealized_diurnal_solar_cal_2d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!-------------------------------------------------------------------
+
+!-------------------------------------------------------------------
+real, dimension(:,:), intent(in)            :: lat, lon
+type(time_type),      intent(in)            :: time
+real, dimension(:,:), intent(out)           :: cosz, fracday
+real,                 intent(out)           :: rrsun
+type(time_type),      intent(in), optional  :: dt_time
+logical,              intent(in), optional  :: allow_negative_cosz
+real, dimension(:,:), intent(out), optional  :: half_day_out
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+!   local variables
+
+      real :: dt
+      real :: gmt, time_since_ae
+
+!---------------------------------------------------------------------
+!    extract time of day (gmt) from time_type variable time with
+!    function universal_time.
+!---------------------------------------------------------------------
+      gmt = universal_time(time)
+
+!---------------------------------------------------------------------
+!    extract the time of year (time_since_ae) from time_type variable 
+!    time using the function orbital_time.
+!---------------------------------------------------------------------
+      time_since_ae = orbital_time(time)
+
+!---------------------------------------------------------------------
+!    convert optional time_type variable dt_time (length of averaging 
+!    period) to a real variable dt with the function universal_time.
+!---------------------------------------------------------------------
+      if (present(dt_time))  then
+        dt = universal_time(dt_time)
+        if (dt > PI) then
+          call error_mesg ( 'astronomy_mod', &
+             'radiation time step must be no longer than 12 hrs', &
+                                                          FATAL)
+        endif
+        if (dt == 0.0) then
+          call error_mesg ( 'astronomy_mod', &
+              'radiation time step must not be an integral &
+                                     &number of days', FATAL)
+        endif
+
+!--------------------------------------------------------------------
+!    call idealized_diurnal_solar_2d to calculate astronomy fields, with or 
+!    without the optional argument dt.
+!--------------------------------------------------------------------
+        call idealized_diurnal_solar_2d (lat, lon, gmt, time_since_ae, cosz, &
+               fracday, rrsun, dt=dt, &
+               allow_negative_cosz=allow_negative_cosz, & 
+               half_day_out=half_day_out)
+      else
+        call idealized_diurnal_solar_2d (lat, lon, gmt, time_since_ae, cosz, &
+               fracday, rrsun, &
+               allow_negative_cosz=allow_negative_cosz, &
+               half_day_out=half_day_out)
+      end if
+
+
+end subroutine idealized_diurnal_solar_cal_2d
+
+
+!#####################################################################
+! <SUBROUTINE NAME="idealized_diurnal_solar_cal_1d">
+!  <OVERVIEW>
+!    idealized_diurnal_solar_cal_1d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_diurnal_solar_cal_1d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_diurnal_solar_cal_1d (lat, lon, gmt, time_since_ae, cosz, &
+!                             fracday, rrsun, dt) 
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN> 
+!  <IN NAME="lon" TYPE="real">
+!   longitude of model grid points 
+!  </IN>
+!  <IN NAME="gmt" TYPE="real">
+!   time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!  </IN>
+!  <IN NAME="time_since_ae" TYPE="real">
+!   time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+!  <IN NAME="dt_time" TYPE="time_type">
+!   OPTIONAL: time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous.
+!  </IN>
+! </SUBROUTINE>
+!
+subroutine idealized_diurnal_solar_cal_1d (lat, lon, time, cosz, fracday,   &
+                                 rrsun, dt_time, allow_negative_cosz, &
+                                 half_day_out)
+
+!--------------------------------------------------------------------
+real, dimension(:), intent(in)           :: lat, lon
+type(time_type),    intent(in)           :: time
+real, dimension(:), intent(out)          :: cosz, fracday
+real,               intent(out)          :: rrsun
+type(time_type),    intent(in), optional :: dt_time
+logical,            intent(in), optional :: allow_negative_cosz
+real, dimension(:), intent(out), optional :: half_day_out
+!--------------------------------------------------------------------
+
+!-------------------------------------------------------------------
+!   local variables
+
+      real, dimension(size(lat),1) :: lat_2d, lon_2d, cosz_2d, & 
+                                      fracday_2d, halfday_2d
+
+!--------------------------------------------------------------------
+!    define 2-d versions of input data arrays.
+!--------------------------------------------------------------------
+      lat_2d(:,1) = lat
+      lon_2d(:,1) = lon
+
+!--------------------------------------------------------------------
+!    call idealized_diurnal_solar_cal_2d to convert the time_types to reals and
+!    then calculate the astronomy fields.
+!--------------------------------------------------------------------
+      if (present(dt_time)) then
+        call idealized_diurnal_solar_cal_2d (lat_2d, lon_2d, time, cosz_2d,    &
+           fracday_2d, rrsun, dt_time=dt_time, &
+           allow_negative_cosz=allow_negative_cosz, &
+           half_day_out=halfday_2d)
+      else
+        call idealized_diurnal_solar_cal_2d (lat_2d, lon_2d, time, cosz_2d,    &
+           fracday_2d, rrsun, &
+           allow_negative_cosz=allow_negative_cosz, &
+           half_day_out=halfday_2d)
+      end if
+
+!-------------------------------------------------------------------
+!    place output fields into 1-d arguments for return to 
+!    calling routine.
+!-------------------------------------------------------------------
+      fracday = fracday_2d(:,1)
+      cosz  = cosz_2d (:,1)
+      if (present(half_day_out)) then 
+         half_day_out = halfday_2d(:,1)
+      end if
+      
+
+end subroutine idealized_diurnal_solar_cal_1d
+
+
+
+!#####################################################################
+! <SUBROUTINE NAME="idealized_diurnal_solar_cal_0d">
+!  <OVERVIEW>
+!    idealized_diurnal_solar_cal_0d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!  </OVERVIEW>
+!  <DESCRIPTION>
+!    idealized_diurnal_solar_cal_0d receives time_type inputs, converts 
+!    them to real variables and then calls idealized_diurnal_solar_2d to
+!    compute desired astronomical variables.
+!  </DESCRIPTION>
+!  <TEMPLATE>
+!   call idealized_diurnal_solar_cal_0d (lat, lon, gmt, time_since_ae, cosz, &
+!                             fracday, rrsun, dt_time) 
+!  </TEMPLATE>
+!  <IN NAME="lat" TYPE="real">
+!   latitudes of model grid points 
+!  </IN> 
+!  <IN NAME="lon" TYPE="real">
+!   longitude of model grid points 
+!  </IN>
+!  <IN NAME="gmt" TYPE="real">
+!   time of day at longitude 0.0; midnight = 0.0, 
+!                    one day = 2 * pi
+!  </IN>
+!  <IN NAME="time_since_ae" TYPE="real">
+!   time of year; autumnal equinox = 0.0,
+!                    one year = 2 * pi
+!  </IN>
+!  <OUT NAME="cosz" TYPE="real">
+!   cosine of solar zenith angle
+!  </OUT>
+!  <OUT NAME="fracday" TYPE="real">
+!   daylight fraction of time interval
+!  </OUT>
+!  <OUT NAME="rrsun" TYPE="real">
+!   earth-sun distance (r) relative to semi-major axis
+!                    of orbital ellipse (a) : (a/r)**2
+!  </OUT>
+!  <IN NAME="dt_time" TYPE="time_type">
+!   OPTIONAL: time interval after gmt over which the astronomical
+!                   variables are to be averaged. this produces averaged
+!                   output rather than instantaneous.
+!  </IN>
+! </SUBROUTINE>
+!
+subroutine idealized_diurnal_solar_cal_0d (lat, lon, time, cosz, fracday,   &
+                                 rrsun, dt_time, allow_negative_cosz, &
+                                 half_day_out)
+
+!---------------------------------------------------------------------
+real,            intent(in)           :: lat, lon
+type(time_type), intent(in)           :: time
+real,            intent(out)          :: cosz, fracday, rrsun
+type(time_type), intent(in), optional :: dt_time
+logical,         intent(in), optional :: allow_negative_cosz
+real,            intent(out), optional :: half_day_out
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+!  local variables
+
+      real, dimension(1,1) :: lat_2d, lon_2d, cosz_2d, fracday_2d, halfday_2d
+
+!--------------------------------------------------------------------
+!    define 2-d versions of input data arrays.
+!--------------------------------------------------------------------
+      lat_2d = lat
+      lon_2d = lon
+
+!--------------------------------------------------------------------
+!    call idealized_diurnal_solar_cal_2d to convert the time_types to reals and
+!    then calculate the astronomy fields.
+!--------------------------------------------------------------------
+      if (present(dt_time)) then
+        call idealized_diurnal_solar_cal_2d (lat_2d, lon_2d, time, cosz_2d,   &
+           fracday_2d, rrsun, dt_time=dt_time, &
+           allow_negative_cosz=allow_negative_cosz, &
+           half_day_out=halfday_2d)
+      else
+        call idealized_diurnal_solar_cal_2d (lat_2d, lon_2d, time, cosz_2d,   &
+           fracday_2d, rrsun, &
+           allow_negative_cosz=allow_negative_cosz, &
+           half_day_out=halfday_2d)
+      end if
+
+!-------------------------------------------------------------------
+!    place output fields into 1-d arguments for return to 
+!    calling routine.
+!-------------------------------------------------------------------
+      fracday= fracday_2d(1,1)
+      cosz = cosz_2d(1,1)
+      if (present(half_day_out)) then 
+         half_day_out = halfday_2d(1,1)
+      end if
+
+
+end subroutine idealized_diurnal_solar_cal_0d
+
+
+!####################################################################
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!                                
+!                END INTERFACE IDEALIZED_DIURNAL_SOLAR
+!
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 !###################################################################
 ! <SUBROUTINE NAME="astronomy_end">

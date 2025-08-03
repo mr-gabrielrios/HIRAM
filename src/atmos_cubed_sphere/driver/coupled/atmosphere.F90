@@ -40,7 +40,7 @@ use fv_arrays_mod,      only: fv_atmos_type
 use fv_control_mod,     only: fv_init, domain, fv_end, p_ref
 use fv_mp_mod,          only: domain_for_coupler
 use fv_dynamics_mod,    only: fv_dynamics
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_diag_gr, fv_time
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
@@ -89,7 +89,7 @@ character(len=7)   :: mod_name = 'atmos'
   integer :: atmos_axes(4)
   integer :: ntiles=1
   integer :: id_dynam, id_phys_down, id_phys_up, id_fv_diag
-  logical :: cold_start = .false.       ! read in initial condition
+  logical :: cold_start = .false.       ! read iP0+r\P0+r\P0+r\P0+r\n initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
   integer :: num_tracers = 0
@@ -392,12 +392,14 @@ contains
 
 
  subroutine atmosphere_up ( Time,  frac_land, Surf_diff, lprec, fprec, gust, &
+                            vort850, rh250, rh500, rh700, rh850, swfq, &
                             u_star, b_star, q_star )
 
    type(time_type),intent(in)         :: Time
    type(surf_diff_type), intent(inout):: Surf_diff
    real, intent(in),  dimension(:,:)  :: frac_land
    real, intent(inout), dimension(:,:):: gust
+   real, intent(inout), dimension(:,:):: vort850, rh250, rh500, rh700, rh850, swfq
    real, intent(out), dimension(:,:)  :: lprec,   fprec
    real, intent(in), dimension(:,:)   :: u_star, b_star, q_star
 
@@ -423,7 +425,8 @@ contains
    call get_time (fv_time, seconds,  days)
 !-----------------------------------------------------------------------
                 call timing_on('FV_DIAG')
-   call fv_diag( Atm, zvir, fv_time, Atm(1)%print_freq )
+                call fv_diag_gr(Atm, zvir, fv_time, Atm(1)%print_freq, &
+                                vort850, rh500, rh700, rh850, swfq)
                 call timing_off('FV_DIAG')     
 !-----------------------------------------------------------------------
    call mpp_clock_end(id_fv_diag)

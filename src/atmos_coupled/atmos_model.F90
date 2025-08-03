@@ -87,6 +87,12 @@ public ice_atm_bnd_type_chksum
      real, pointer, dimension(:,:) :: p_surf   => NULL() ! surface pressure 
      real, pointer, dimension(:,:) :: slp      => NULL() ! sea level pressure 
      real, pointer, dimension(:,:) :: gust     => NULL() ! gustiness factor
+     real, pointer, dimension(:,:) :: vort850     => NULL() ! 850 mb vorticity
+     real, pointer, dimension(:,:) :: rh250     => NULL() ! 250 mb rel hum
+     real, pointer, dimension(:,:) :: rh500     => NULL() ! 500 mb rel hum
+     real, pointer, dimension(:,:) :: rh700     => NULL() ! 700 mb rel hum
+     real, pointer, dimension(:,:) :: rh850     => NULL() ! 850 mb rel hum
+     real, pointer, dimension(:,:) :: swfq       => NULL() ! SWISHE frequency grid
      real, pointer, dimension(:,:) :: coszen   => NULL() ! cosine of the zenith angle
      real, pointer, dimension(:,:) :: flux_sw  => NULL() ! net shortwave flux (W/m2) at the surface
      real, pointer, dimension(:,:) :: flux_sw_dir            =>NULL()
@@ -309,7 +315,8 @@ type (atmos_data_type), intent(inout) :: Atmos
 
     call atmosphere_up (Atmos%Time,  Surface_boundary%land_frac, Atmos%Surf_diff, &
                         Atmos%lprec, Atmos%fprec, Atmos%gust, &
-                        Surface_boundary%u_star, Surface_boundary%b_star, Surface_boundary%q_star)
+                        Atmos%vort850, Atmos%rh250, Atmos%rh500, Atmos%rh700, Atmos%rh850, & 
+                        Atmos%swfq, Surface_boundary%u_star, Surface_boundary%b_star, Surface_boundary%q_star)
 
 !   --- advance time ---
 
@@ -433,6 +440,12 @@ type (time_type), intent(in) :: Time_init, Time, Time_step
                Atmos % p_surf   (nlon,nlat), &
                Atmos % slp      (nlon,nlat), &
                Atmos % gust     (nlon,nlat), &
+               Atmos % vort850  (nlon,nlat), &
+               Atmos % rh250    (nlon,nlat), &
+               Atmos % rh500    (nlon,nlat), &
+               Atmos % rh700    (nlon,nlat), &
+               Atmos % rh850    (nlon,nlat), &
+               Atmos % swfq     (nlon,nlat), &
                Atmos % flux_sw  (nlon,nlat), &
                Atmos % flux_sw_dir (nlon,nlat), &
                Atmos % flux_sw_dif (nlon,nlat), &
@@ -649,6 +662,12 @@ type (atmos_data_type), intent(inout) :: Atmos
                Atmos % p_surf   , &
                Atmos % slp      , &
                Atmos % gust     , &
+               Atmos % vort850  , &
+               Atmos % rh250    , &
+               Atmos % rh500    , &
+               Atmos % rh700    , &
+               Atmos % rh850    , &
+               Atmos % swfq    ,    &
                Atmos % flux_sw  , &
                Atmos % flux_sw_dir  , &
                Atmos % flux_sw_dif  , &
@@ -810,6 +829,12 @@ type(atmos_data_type), intent(in) :: atm
   write(outunit,100) ' atm%v_bot                  ', mpp_chksum(atm%v_bot                 )
   write(outunit,100) ' atm%p_surf                 ', mpp_chksum(atm%p_surf                )
   write(outunit,100) ' atm%slp                    ', mpp_chksum(atm%slp                   )
+  write(outunit,100) ' atm%vort850                ', mpp_chksum(atm%vort850               )
+  write(outunit,100) ' atm%rh250                  ', mpp_chksum(atm%rh250                 )
+  write(outunit,100) ' atm%rh500                  ', mpp_chksum(atm%rh500                 )
+  write(outunit,100) ' atm%rh700                  ', mpp_chksum(atm%rh700                 )
+  write(outunit,100) ' atm%rh850                  ', mpp_chksum(atm%rh850                 )
+  write(outunit,100) ' atm%swfq                   ', mpp_chksum(atm%swfq                  )
   write(outunit,100) ' atm%gust                   ', mpp_chksum(atm%gust                  )
   write(outunit,100) ' atm%coszen                 ', mpp_chksum(atm%coszen                )
   write(outunit,100) ' atm%flux_sw                ', mpp_chksum(atm%flux_sw               )

@@ -808,7 +808,7 @@ endif
         Date_end = date_type( 1996, 3, 0 )
     else if (lowercase(trim(data_set)) == 'hurrell') then
         file_name_sst = 'INPUT/' // 'hurrell_sst.data'
-        file_name_ice = 'INPUT/' // 'hurrell_ice.data'
+        file_name_ice = 'INPUT/' // 'hurrell_sst.data'
         mobs = 360;  nobs = 180
         call set_sst_grid_edges_oi
 !       --- specfied min for hurrell ---

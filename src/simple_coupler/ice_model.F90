@@ -26,6 +26,12 @@ use  mpp_domains_mod, only: domain2d,  mpp_get_layout,  &
                             mpp_get_global_domain, mpp_get_compute_domain
 use mpp_mod, only: mpp_min, mpp_max
 
+!miz
+use atmos_model_mod,  only: atmos_data_type
+use diag_manager_mod, only: register_diag_field, send_data
+use data_override_mod,only: data_override !for overriding flux_oh
+!miz
+
 implicit none
 private
 real :: cmin,cmax
@@ -33,6 +39,11 @@ real :: cmin,cmax
 public :: ice_data_type, atmos_ice_boundary_type,               &
           ice_model_init, ice_model_end, update_ice_model_fast, &
           update_ice_model_slow
+!miz	  
+character(len=9) :: mod_name = 'ice_model'	  
+integer :: id_flux_oh
+logical :: used
+!miz
 !----------------------------------------------------------------
 !--------- NAMELIST INTERFACE ---------
 !
@@ -65,14 +76,46 @@ character(len=64) :: sst_method = 'specified'  ! specified, uniform, or mixed_la
                                                !   aqua_planet_8 = 3KW1
 real              :: temp_ice = 270.      ! used when ice_method = 'uniform'
 real              :: temp_sst = 280.      ! used when sst_method = 'uniform'
+!miz/tmm
+real    :: ohflux_hemi_asym_width=50.
+real    :: ohflux_hemi_asym_amp=0.
+real    :: trop_ohflux_amp = 0.0
+real    :: trop_ohflux_width = 16.0  ! width of tropqflux region in degrees
+real    :: walker_ohflux_amp = 0.0
+real    :: rose_amp_oh = 0.0
+real    :: itcz_ohflux_amp = 0.0 ! can be negative
+real    :: itcz_ohflux_width = 6.0 ! half width in degrees
+real    :: itcz_ohflux_phi0 = 0.0 ! lat in degrees of center Qflux
+logical :: use_wide_itcz_ohflux  = .false. ! spread compensating perturbation Q-flux over wider region
+logical :: use_simple_ice_albedo = .false. ! assume different albedo below temp_ice
+real    :: simple_ice_albedo = 0.5
+!miz/tmm
 character(len=64) :: interp_method  = "bilinear" ! conservative or bilinear
 logical :: do_netcdf_restart = .true.
+
+real    :: e_folding_width = 5.
+real    :: sine_exponent = 4.
+real    :: latitude_of_maximum_SST = 10.
+real    :: max_SST = 29 ! maximum temperature in Celsius
+real    :: min_SST = 0 ! minimum temperature in Celsius
+real    :: sine_wavenumber = 1.25
+
+! GR: slab-ocean parameters (Q-flux = ocean energy flux divergence)
+real    :: q_flux_width = 5 ! e-folding width of positive Q-flux in degrees (keep between 1 and 10)
+real    :: q_flux_center_latitude = 0 ! meridional offset of Q-flux profile from Equator
+real    :: q_flux_0 = 40 ! magnitude of Q-flux
 
 namelist /ice_model_nml/ diff, thickness_min, specified_ice_thickness,        &
                          heat_capacity_ocean, temp_ice_freeze, roughness_ice, &
                          ice_method, use_climo_ice, use_annual_ice, temp_ice, &
                          sst_method, use_climo_sst, use_annual_sst, temp_sst, &
-                         interp_method, do_netcdf_restart
+                         interp_method, do_netcdf_restart, ohflux_hemi_asym_width,&
+                         ohflux_hemi_asym_amp, trop_ohflux_amp, trop_ohflux_width, &
+                         walker_ohflux_amp, rose_amp_oh, itcz_ohflux_amp, &
+                         itcz_ohflux_width, itcz_ohflux_phi0, use_wide_itcz_ohflux, &
+                         use_simple_ice_albedo, simple_ice_albedo, & !miz/tmm
+                         e_folding_width, sine_exponent, latitude_of_maximum_SST, &
+                         max_SST, min_SST, sine_wavenumber, q_flux_width, q_flux_center_latitude, q_flux_0
 
 !----------------------------------------------------------------
 
@@ -134,8 +177,8 @@ type(amip_interp_type), save :: Amip_ice, Amip_sst
 logical :: module_is_initialized = .false.
 character(len=64) :: fname = 'INPUT/ice_model.res.nc'
 
-character(len=128) :: version = '$Id: ice_model.F90,v 19.0 2012/01/06 22:06:50 fms Exp $'
-character(len=128) :: tagname = '$Name: siena $'
+character(len=128) :: version = '$Id: ice_model.F90,v 1.1.1.1 2011/07/11 21:09:17 miz Exp $'
+character(len=128) :: tagname = '$Name:  $'
 
 real, parameter :: LATENT = HLV + HLF
 
@@ -150,13 +193,21 @@ contains
  real, dimension(is:ie,js:je) :: ts_new, gamma, flux_i, t_dt_surf, &
                  flux_t_new, flux_q_new, flux_lw_new, flux_sw_new, &
                  flux_u_new, flux_v_new, lprec_new,   fprec_new,   &
-                 deriv
+                 deriv, flux_oh, flux_oh_itcz, &
+                 q_flux_rios, q_flux_pos, q_flux_neg
 
  logical, dimension(is:ie,js:je,2) :: mask_ice
  real,    dimension(is:ie,js:je,2) :: thickness_ice, t_surf_ice, albedo
  real,    dimension(is:ie,js:je)   :: albedo_vis_dir, albedo_nir_dir, &
                                       albedo_vis_dif, albedo_nir_dif
  integer :: dt
+!miz
+ real    :: lat, lon, pi, freq, rad_trop_width
+ real    :: q_flux_width_radians, q_flux_center_latitude_radians
+ real    :: meridional_offset, root_min, root_max
+ integer :: i, j
+ pi = 4. * atan(1.0)
+!miz
 
 !-----------------------------------------------------------------------
 !
@@ -221,10 +272,221 @@ endif
 
    if (trim(sst_method) == 'mixed_layer') then
 
-       call get_time ( Ice%Time_step_slow, dt )
+       call get_time ( Ice%Time_step_fast, dt )
+
+       ! hemispherically asymmetric Qflux as in Kang et al 2008
+       do i = is, ie
+        do j = js, je
+          lat   = Ice%lat(i,j)*180/pi; 
+       
+          if ( -90. < lat .and. lat < -90. + ohflux_hemi_asym_width ) then
+            flux_oh(i,j) = ohflux_hemi_asym_amp * sin( (lat + 90.-ohflux_hemi_asym_width)*pi / ohflux_hemi_asym_width )
+  	  elseif ( 90.-ohflux_hemi_asym_width < lat .and. lat < 90. ) then
+            flux_oh(i,j) = ohflux_hemi_asym_amp * sin( (lat - 90.+ohflux_hemi_asym_width)*pi / ohflux_hemi_asym_width )
+          else
+            flux_oh(i,j) = 0.0
+          endif 	
+        enddo
+       enddo
+
+       ! local ITCZ Qflux perturbation
+       do i = is, ie
+        do j = js, je
+          lat   = Ice%lat(i,j)*180/pi; 
+
+	  if ( use_wide_itcz_ohflux ) then       
+            if ( lat > itcz_ohflux_phi0 - 2.5*itcz_ohflux_width  .and. lat < itcz_ohflux_phi0 - 0.5*itcz_ohflux_width ) then
+	      flux_oh_itcz(i,j) = 0.5*itcz_ohflux_amp*sin(pi*(lat - (itcz_ohflux_phi0 - 0.5*itcz_ohflux_width))/(2.*itcz_ohflux_width)) / &
+	    	    cos(lat*pi/180.0) 
+    	    elseif ( lat > itcz_ohflux_phi0 - 0.5*itcz_ohflux_width  .and. lat < itcz_ohflux_phi0 + 0.5*itcz_ohflux_width ) then
+              flux_oh_itcz(i,j) = 2.0*itcz_ohflux_amp*sin(pi*(lat - (itcz_ohflux_phi0 - 0.5*itcz_ohflux_width))/itcz_ohflux_width) / &
+	    	    cos(lat*pi/180.0) 
+  	    elseif ( lat > itcz_ohflux_phi0 + 0.5*itcz_ohflux_width  .and. lat < itcz_ohflux_phi0 + 2.5*itcz_ohflux_width ) then
+              flux_oh_itcz(i,j) = -0.5*itcz_ohflux_amp*sin(pi*(lat - (itcz_ohflux_phi0 + 0.5*itcz_ohflux_width))/(2.*itcz_ohflux_width)) / &
+	    	    cos(lat*pi/180.0) 
+            else
+              flux_oh_itcz(i,j) = 0.0
+            endif 	
+	  else
+            if ( lat > itcz_ohflux_phi0 - 1.5*itcz_ohflux_width  .and. lat < itcz_ohflux_phi0 - 0.5*itcz_ohflux_width ) then
+	      flux_oh_itcz(i,j) = itcz_ohflux_amp*sin(pi*(lat - (itcz_ohflux_phi0 - 0.5*itcz_ohflux_width))/itcz_ohflux_width) / &
+	    	    cos(lat*pi/180.0) 
+    	    elseif ( lat > itcz_ohflux_phi0 - 0.5*itcz_ohflux_width  .and. lat < itcz_ohflux_phi0 + 0.5*itcz_ohflux_width ) then
+              flux_oh_itcz(i,j) = 2.0*itcz_ohflux_amp*sin(pi*(lat - (itcz_ohflux_phi0 - 0.5*itcz_ohflux_width))/itcz_ohflux_width) / &
+	    	    cos(lat*pi/180.0) 
+  	    elseif ( lat > itcz_ohflux_phi0 + 0.5*itcz_ohflux_width  .and. lat < itcz_ohflux_phi0 + 1.5*itcz_ohflux_width ) then
+              flux_oh_itcz(i,j) = - itcz_ohflux_amp*sin(pi*(lat - (itcz_ohflux_phi0 + 0.5*itcz_ohflux_width))/itcz_ohflux_width) / &
+	    	    cos(lat*pi/180.0) 
+            else
+              flux_oh_itcz(i,j) = 0.0
+            endif 	
+	  endif	! end use_wide_itcz_ohflux conditional
+        enddo
+       enddo
+       ! add ITCZ Qflux to existing Qflux
+       flux_oh = flux_oh + flux_oh_itcz
+
+       ! tropical Qflux as in Bordoni 2007
+       ! with Merlis et al 2012 correction
+       rad_trop_width = trop_ohflux_width*pi/180.
+       flux_oh = flux_oh - &
+        trop_ohflux_amp*(1-2.*Ice%lat**2/rad_trop_width**2) * &
+       		    exp(- ((Ice%lat)**2/(rad_trop_width)**2)) / cos(Ice%lat)
+
 
        where (Ice%mask .and. .not. Ice%ice_mask)
-          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux -   &
+          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux + flux_oh - &
+                     Atmos_boundary%t_flux - Atmos_boundary%q_flux*HLV - &
+                     Atmos_boundary%fprec*HLF ) * real(dt)/heat_capacity_ocean
+          deriv = -( Atmos_boundary%dhdt + Atmos_boundary%dedt*HLV + &
+                     Atmos_boundary%drdt) * real(dt)/heat_capacity_ocean 
+          t_dt_surf = flux_i/(1.0 -deriv) 
+          ts_new = Ice%t_surf + t_dt_surf
+       endwhere
+
+     ! update sea surface temperature
+     ! note: temperatures allowed below freezing for conservation
+       where (Ice%mask .and. .not.Ice%ice_mask)
+         Ice%t_surf  = ts_new
+       endwhere
+
+   endif
+
+   ! Rose and Ferreira 2012 Q-flux formulation
+   if (trim(sst_method) == 'mixed_layer_rose') then
+
+       call get_time ( Ice%Time_step_fast, dt )
+
+       ! lowest order Qflux as in Rose and Ferreira 2012
+       ! equivalent to second legendre polynomial
+       flux_oh = - rose_amp_oh * ( cos(Ice%lat)**2 - 2*sin(Ice%lat)**2 )
+
+       where (Ice%mask .and. .not. Ice%ice_mask)
+          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux + flux_oh - &
+                     Atmos_boundary%t_flux - Atmos_boundary%q_flux*HLV - &
+                     Atmos_boundary%fprec*HLF ) * real(dt)/heat_capacity_ocean
+          deriv = -( Atmos_boundary%dhdt + Atmos_boundary%dedt*HLV + &
+                     Atmos_boundary%drdt) * real(dt)/heat_capacity_ocean 
+          t_dt_surf = flux_i/(1.0 -deriv) 
+          ts_new = Ice%t_surf + t_dt_surf
+       endwhere
+
+     ! update sea surface temperature
+     ! note: temperatures allowed below freezing for conservation
+       where (Ice%mask .and. .not.Ice%ice_mask)
+         Ice%t_surf  = ts_new
+       endwhere
+
+   endif
+   
+   ! Rios Q-flux formulation
+   if (trim(sst_method) == 'mixed_layer_rios') then
+
+       call get_time ( Ice%Time_step_fast, dt )
+
+       ! Convert latitudes into radians
+       q_flux_width_radians = q_flux_width * pi / 180 ! e-folding width of the Q-flux width
+       q_flux_center_latitude_radians = q_flux_center_latitude * pi / 180 ! meridional offset of the Q-flux maximum from the Equator
+
+       ! Q-flux is a sum of a strong positive component and weaker negative component
+       q_flux_pos = exp(-(Ice%lat - q_flux_center_latitude_radians)**2 / (2 * q_flux_width_radians **2)) 
+       q_flux_neg = -0.5 * exp(-(Ice%lat - 2 * q_flux_center_latitude_radians)**2 / (2 * q_flux_width_radians **2))
+       q_flux_rios = 2 * q_flux_0 * (q_flux_pos + q_flux_neg)
+
+       where (Ice%mask .and. .not. Ice%ice_mask)
+          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux + q_flux_rios - &
+                     Atmos_boundary%t_flux - Atmos_boundary%q_flux*HLV - &
+                     Atmos_boundary%fprec*HLF ) * real(dt)/heat_capacity_ocean
+          deriv = -( Atmos_boundary%dhdt + Atmos_boundary%dedt*HLV + &
+                     Atmos_boundary%drdt) * real(dt)/heat_capacity_ocean 
+          t_dt_surf = flux_i/(1.0 -deriv) 
+          ts_new = Ice%t_surf + t_dt_surf
+       endwhere
+     
+       ! Update sea surface temperature
+       ! Note: temperatures allowed below freezing for conservation
+       where (Ice%mask .and. .not.Ice%ice_mask)
+         Ice%t_surf  = ts_new
+       endwhere
+
+   endif
+   
+   if (trim(sst_method) == 'mixed_layer_rios-sine') then
+
+       call get_time ( Ice%Time_step_fast, dt )
+
+       ! Constants for SST profile shift
+       meridional_offset = q_flux_center_latitude * pi / 180. ! convert from degrees to radians
+       root_min = (-(pi / 2) / sine_wavenumber + meridional_offset) ! calculate minimum root (where SST = 0 degC)
+       root_max = ((pi / 2) / sine_wavenumber + meridional_offset) ! calculate maximum root for filtering (where SST = 0 degC)
+
+       q_flux_rios = merge(q_flux_0 * (1 - sin(sine_wavenumber * Ice%lat - sine_wavenumber * meridional_offset)**sine_exponent) + min_SST, &
+                           min_SST, &
+                           ((Ice%lat .ge. root_min) .and. (Ice%lat .le. root_max))) 
+
+       where (Ice%mask .and. .not. Ice%ice_mask)
+          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux + q_flux_rios - &
+                     Atmos_boundary%t_flux - Atmos_boundary%q_flux*HLV - &
+                     Atmos_boundary%fprec*HLF ) * real(dt)/heat_capacity_ocean
+          deriv = -( Atmos_boundary%dhdt + Atmos_boundary%dedt*HLV + &
+                     Atmos_boundary%drdt) * real(dt)/heat_capacity_ocean 
+          t_dt_surf = flux_i/(1.0 -deriv) 
+          ts_new = Ice%t_surf + t_dt_surf
+       endwhere
+     
+       ! Update sea surface temperature
+       ! Note: temperatures allowed below freezing for conservation
+       where (Ice%mask .and. .not.Ice%ice_mask)
+         Ice%t_surf  = ts_new
+       endwhere
+
+   endif
+
+   ! Merlis and Schneider 2011 Q-flux formulation
+   if (trim(sst_method) == 'mixed_layer_merlis') then
+
+       call get_time ( Ice%Time_step_fast, dt )
+
+       ! tropical Qflux as in Bordoni 2007
+       ! with Merlis et al 2012 correction
+       rad_trop_width = trop_ohflux_width*pi/180.
+       flux_oh =  -trop_ohflux_amp*(1-2.*Ice%lat**2/rad_trop_width**2) * &
+                  exp(- ((Ice%lat)**2/(rad_trop_width)**2)) / cos(Ice%lat)
+
+       ! parameters for zonally asymmetric perturbation hard coded
+       flux_oh = flux_oh - &
+          walker_ohflux_amp*exp( - ( (Ice%lon - 270.0*pi/180.)**2/((30.0*pi/180.)**2) + &
+           (Ice%lat)**2/((7.0*pi/180.)**2) ) ) + &
+          walker_ohflux_amp*exp( - ( (Ice%lon - 90.0*pi/180.)**2/((30.0*pi/180.)**2) + &
+           (Ice%lat)**2/((7.0*pi/180)**2) ) )
+
+       where (Ice%mask .and. .not. Ice%ice_mask)
+          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux + flux_oh - &
+                     Atmos_boundary%t_flux - Atmos_boundary%q_flux*HLV - &
+                     Atmos_boundary%fprec*HLF ) * real(dt)/heat_capacity_ocean
+          deriv = -( Atmos_boundary%dhdt + Atmos_boundary%dedt*HLV + &
+                     Atmos_boundary%drdt) * real(dt)/heat_capacity_ocean 
+          t_dt_surf = flux_i/(1.0 -deriv) 
+          ts_new = Ice%t_surf + t_dt_surf
+       endwhere
+
+     ! update sea surface temperature
+     ! note: temperatures allowed below freezing for conservation
+       where (Ice%mask .and. .not.Ice%ice_mask)
+         Ice%t_surf  = ts_new
+       endwhere
+
+   endif
+
+   !miz
+   if (trim(sst_method) == 'mixed_layer_data') then
+
+       call get_time ( Ice%Time_step_fast, dt )
+        
+       call data_override('ICE', 'flux_oh', flux_oh, Ice%Time)   
+
+       where (Ice%mask .and. .not. Ice%ice_mask)
+          flux_i = ( Atmos_boundary%lw_flux + Atmos_boundary%sw_flux + flux_oh - &
                      Atmos_boundary%t_flux - Atmos_boundary%q_flux*HLV - &
                      Atmos_boundary%fprec*HLF ) * real(dt)/heat_capacity_ocean
           deriv = -( Atmos_boundary%dhdt + Atmos_boundary%dedt*HLV + &
@@ -290,6 +552,20 @@ endif
        Ice%albedo_nir_dif = albedo_vis_dir
     endwhere
 
+    ! Tim M. mod Aug. 8, 2013       
+    if ( use_simple_ice_albedo ) then
+       where (Ice%t_surf < temp_ice .and. .not. Ice%ice_mask)
+    	     Ice%albedo = simple_ice_albedo
+	     Ice%albedo_vis_dir = simple_ice_albedo
+	     Ice%albedo_nir_dir = simple_ice_albedo
+	     Ice%albedo_vis_dif = simple_ice_albedo
+	     Ice%albedo_nir_dif = simple_ice_albedo
+       endwhere	
+    endif	
+
+!miz
+   if ( id_flux_oh > 0 ) used = send_data ( id_flux_oh, flux_oh, Ice%Time )
+!miz
 !-----------------------------------------------------------------------
 !--------- advance time -----------------
 
@@ -378,16 +654,22 @@ endif
 
 !######################################################################
 
- subroutine ice_model_init ( Ice, Time_Init, Time, &
+ subroutine ice_model_init ( Ice, Atm, Time_Init, Time, &   !miz
                              Time_step_fast, Time_step_slow, &
                              glon_bnd, glat_bnd, Atmos_domain )
  type(ice_data_type), intent(inout) :: Ice
  type(time_type)    , intent(in)    :: Time_Init, Time, &
                                        Time_step_fast, Time_step_slow
+!miz
+ type(atmos_data_type), intent(in)  :: Atm
+!miz
  real               , intent(in)    :: glon_bnd(:,:), glat_bnd(:,:)
  type(domain2d), intent(in), target :: Atmos_domain
 
-real :: lon0, lond, latd, amp, t_control, dellon
+ real :: lon0, lond, latd, amp, t_control, dellon
+ ! GR: custom SST profile constants
+ real :: period, meridional_offset, root_min, root_max
+
  integer :: isg, ieg, jsg, jeg
  integer :: unit, ierr, io, i, j
  integer :: ndim, nvar, natt, ntime, nlon, nlat, mlon, mlat, layout(2)
@@ -433,7 +715,20 @@ real :: lon0, lond, latd, amp, t_control, dellon
        trim(sst_method) /= 'aqua_planet_6'  .and. &
        trim(sst_method) /= 'aqua_planet_7'  .and. &
        trim(sst_method) /= 'aqua_planet_8'  .and. &
-       trim(sst_method) /= 'mixed_layer' ) call error_mesg &
+       trim(sst_method) /= 'aqua_planet_9'  .and. &
+       trim(sst_method) /= 'aqua_planet_9b'  .and. &
+       trim(sst_method) /= 'aqua_planet_11'  .and. &
+       trim(sst_method) /= 'aqua_planet_12'  .and. &
+       trim(sst_method) /= 'aqua_planet_15N' .and. &
+       trim(sst_method) /= 'aqua_planet_20N' .and. &
+       trim(sst_method) /= 'aqua_planet_sine'  .and. &
+       trim(sst_method) /= 'aqua_planet_gauss' .and. &
+       trim(sst_method) /= 'mixed_layer'    .and. &               !miz
+       trim(sst_method) /= 'mixed_layer_data' .and. &             !miz
+       trim(sst_method) /= 'mixed_layer_merlis' .and. &             !tmm
+       trim(sst_method) /= 'mixed_layer_rios' .and. &             
+       trim(sst_method) /= 'mixed_layer_rios-sine' .and. &             
+       trim(sst_method) /= 'mixed_layer_rose' ) call error_mesg & !miz
      ('ice_model_init', 'namelist variable sst_method has invalid value', FATAL)
 
 !----------------------------------------------------------
@@ -700,6 +995,166 @@ endif
             Ice%t_surf = 27.*(1.-sin(max(min(1.5*Ice%lat,pi*0.5),-pi*0.5))**2) + TFREEZE + &
                          amp * cos(Ice%lon-lon0) * cos(0.5*pi*min(max(Ice%lat/latd,-1.),1.))**2
         endwhere
+    
+    ! -------------------------------------------------------------------------------------------
+    ! GR: begin definition of custom SST profiles
+    ! -------------------------------------------------------------------------------------------
+
+    ! SST maximum centered at equator
+    else if (sst_method == "aqua_planet_9") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = 0. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        meridional_offset = 0 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) + meridional_offset) / sine_wavenumber ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) + meridional_offset) / sine_wavenumber ! calculate maximum root for filtering (where SST = 0 degC)
+       
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(sine_wavenumber * Ice%lat(i, j) - meridional_offset)**4) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+            enddo
+        enddo
+    
+    ! SST maximum centered at equator, narrower SST maximum
+    else if (sst_method == "aqua_planet_9b") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = 0. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        
+        meridional_offset = 0 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) / sine_wavenumber + meridional_offset) ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) / sine_wavenumber + meridional_offset) ! calculate maximum root for filtering (where SST = 0 degC)
+       
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(sine_wavenumber * Ice%lat(i, j) - meridional_offset)**2) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+            enddo
+        enddo
+    
+    ! SST maximum centered at 10 N based on a sinusoid
+    else if (sst_method == "aqua_planet_sine") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        meridional_offset = latitude_of_maximum_SST * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) / sine_wavenumber + meridional_offset) ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) / sine_wavenumber + meridional_offset) ! calculate maximum root for filtering (where SST = 0 degC)
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(sine_wavenumber * (Ice%lat(i, j) - meridional_offset))**sine_exponent) + min_SST + TFREEZE, &
+                                          min_SST + TFREEZE, &
+                                          ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max)))
+            enddo
+        enddo
+
+    ! SST maximum centered at 15 N
+    else if (sst_method == "aqua_planet_15N") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = 0. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        period = 1.25
+        meridional_offset = 15 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) / period + meridional_offset) ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) / period + meridional_offset) ! calculate maximum root for filtering (where SST = 0 degC)
+       
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(period * Ice%lat(i, j) - meridional_offset)**2) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+            enddo
+        enddo
+
+    ! SST maximum centered at 20 N
+    else if (sst_method == "aqua_planet_20N") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = 0. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        period = 1.25
+        meridional_offset = 20 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) + meridional_offset) / period ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) + meridional_offset) / period ! calculate maximum root for filtering (where SST = 0 degC)
+       
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(period * Ice%lat(i, j) - meridional_offset)**4) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+            enddo
+        enddo
+    
+    ! Pseudo-constant SST
+    else if (sst_method == "aqua_planet_11") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = 22. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        period = 1.1
+        meridional_offset = 0 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) + meridional_offset) / period ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) + meridional_offset) / period ! calculate maximum root for filtering (where SST = 0 degC)
+       
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(period * Ice%lat(i, j) - meridional_offset)**100) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+            enddo
+        enddo
+    
+    ! SST flat profile with constricted warm pool
+    else if (sst_method == "aqua_planet_12") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = -2. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        period = 1.5
+        meridional_offset = 15 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) + meridional_offset) / period ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) + meridional_offset) / period ! calculate maximum root for filtering (where SST = 0 degC)
+       
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(period * Ice%lat(i, j) - meridional_offset)**4) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+            enddo
+        enddo
+
+    ! Gaussian, 5-degree e-folding
+    else if (sst_method == "aqua_planet_gauss") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        meridional_offset = latitude_of_maximum_SST * pi / 180
+
+        do j = js, je
+            do i = is, ie
+                Ice%t_surf(i, j) = max_SST * exp((-(Ice%lat(i, j) - meridional_offset)**2) / (2 * (e_folding_width * pi / 180) ** 2)) + TFREEZE
+            enddo
+        enddo
     endif
 
 
@@ -747,6 +1202,11 @@ endif
   endif
 
 print *, 'pe,count(ice,all,ocean)=',mpp_pe(),count(Ice%ice_mask),count(Ice%mask),count(Ice%mask .and. .not.Ice%ice_mask)
+
+!miz
+   id_flux_oh = register_diag_field ( mod_name, 'flux_oh', Atm%axes(1:2), &
+                                      Ice%Time, 'flux_oh', 'W/m2' )
+!miz
 !----------------------------------------------------------
 
   module_is_initialized = .true.
