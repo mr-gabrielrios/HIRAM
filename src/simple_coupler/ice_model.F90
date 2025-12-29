@@ -99,6 +99,7 @@ real    :: latitude_of_maximum_SST = 10.
 real    :: max_SST = 29 ! maximum temperature in Celsius
 real    :: min_SST = 0 ! minimum temperature in Celsius
 real    :: sine_wavenumber = 1.25
+real    :: asym_amp = 2.0
 
 ! GR: slab-ocean parameters (Q-flux = ocean energy flux divergence)
 logical :: use_TC_ohflux  = .false. ! 
@@ -118,7 +119,7 @@ namelist /ice_model_nml/ diff, thickness_min, specified_ice_thickness,        &
                          walker_ohflux_amp, rose_amp_oh, itcz_ohflux_amp, &
                          itcz_ohflux_width, itcz_ohflux_phi0, use_wide_itcz_ohflux, &
                          use_simple_ice_albedo, simple_ice_albedo,  & !miz/tmm
-                         e_folding_width, sine_exponent, latitude_of_maximum_SST, &
+                         e_folding_width, sine_exponent, latitude_of_maximum_SST, asym_amp, &
                          max_SST, min_SST, sine_wavenumber, q_flux_width, q_flux_center_latitude, & 
                          q_flux_0, use_TC_ohflux, TC_ohflux_a, TC_ohflux_b, TC_ohflux_c
 
@@ -209,7 +210,7 @@ contains
 !miz
  real    :: lat, lon, pi, freq, rad_trop_width
  real    :: q_flux_width_radians, q_flux_center_latitude_radians
- real    :: meridional_offset, root_min, root_max, period
+ real    :: meridional_offset, root_min, root_max, period, dtemp_tmp
  integer :: i, j
  pi = 4. * atan(1.0)
 !miz
@@ -669,7 +670,8 @@ endif
 
  real :: lon0, lond, latd, amp, t_control, dellon
  ! GR: custom SST profile constants
- real :: period, meridional_offset, root_min, root_max
+ real :: period, meridional_offset, root_min, root_max, dtemp_tmp
+ real,    dimension(is:ie,js:je)   :: dtemp
 
  integer :: isg, ieg, jsg, jeg
  integer :: unit, ierr, io, i, j
@@ -722,6 +724,7 @@ endif
        trim(sst_method) /= 'aqua_planet_12'  .and. &
        trim(sst_method) /= 'aqua_planet_10N' .and. &
        trim(sst_method) /= 'aqua_planet_15N' .and. &
+       trim(sst_method) /= 'aqua_planet_15N_ASYM' .and. &
        trim(sst_method) /= 'aqua_planet_20N' .and. &
        trim(sst_method) /= 'aqua_planet_sine'  .and. &
        trim(sst_method) /= 'aqua_planet_gauss' .and. &
@@ -1103,6 +1106,43 @@ endif
             enddo
         enddo
 
+    ! SST maximum centered at 15 N with zonal asymmetry
+    ! Zonal perturbation follows Zhang et al. (2021), referred to as Z21 for brevity, DOI: 10.1175/JAS-D-20-0079.1
+    else if (sst_method == "aqua_planet_15N_ASYM") then
+        ice_method = 'none'
+        Ice%ice_mask = .false.
+
+        ! Constants for SST profile shift
+        min_SST = 0. ! minimum SST is chosen to be 7K lower than the peak, per Hsieh et al. (2020) 
+        max_SST = 29. ! taken from HadISST zonal mean SST maximum, see hadisst_sst.clim.1986-2005.nc
+        period = 1.25
+        meridional_offset = 15 * pi / 180. ! convert from degrees to radians
+        root_min = (-(pi / 2) / period + meridional_offset) ! calculate minimum root (where SST = 0 degC)
+        root_max = ((pi / 2) / period + meridional_offset) ! calculate maximum root for filtering (where SST = 0 degC)
+        
+        ! Temperature perturbation (delta T per Z21)
+        dtemp_tmp = 0. 
+
+        do j = js, je
+            do i = is, ie
+                ! Calculate temperature perturbation. Zero out if temperature perturbation is positive.
+                if ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max)) then
+                    dtemp_tmp = asym_amp * cos(Ice%lon(i, j)) * (1 - sin(period * Ice%lat(i, j) - meridional_offset)**2)
+                    if (dtemp_tmp .ge. 0) then
+                        dtemp_tmp = 0.
+                    end if
+                end if
+
+                ! Calculate temperature field
+                Ice%t_surf(i, j) = merge((max_SST - min_SST) * (1 - sin(period * Ice%lat(i, j) - meridional_offset)**2) + min_SST + TFREEZE, & 
+                                          min_SST + TFREEZE, &
+                                         ((Ice%lat(i, j) .ge. root_min) .and. (Ice%lat(i, j) .le. root_max))) 
+                
+                ! Add temperature perturbation to temperature field
+                Ice%t_surf(i, j) = Ice%t_surf(i, j) + dtemp_tmp        
+
+            enddo
+        enddo
     ! SST maximum centered at 20 N
     else if (sst_method == "aqua_planet_20N") then
         ice_method = 'none'
